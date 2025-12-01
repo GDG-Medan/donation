@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="id">
+ <head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Donasi Bencana Banjir dan Tanah Longsor - GDG Indonesia</title>
+
+  <!-- Primary Meta Tags -->
+  <meta
+   name="title"
+   content="Donasi Bencana Banjir dan Tanah Longsor - GDG Indonesia"
+  />
+  <meta
+   name="description"
+   content="Bantu korban bencana banjir dan tanah longsor di Aceh, Sumatera Utara, dan Sumatera Barat. GDG Indonesia melalui GDG Medan mengajak Anda untuk berpartisipasi dalam aksi kemanusiaan."
+  />
+  <meta
+   name="keywords"
+   content="donasi, banjir, tanah longsor, bencana, aceh, sumatera utara, sumatera barat, gdg indonesia, gdg medan"
+  />
+  <meta name="author" content="GDG Indonesia - GDG Medan" />
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://gdg-donation.pages.dev/" />
+  <meta
+   property="og:title"
+   content="Donasi Bencana Banjir dan Tanah Longsor - GDG Indonesia"
+  />
+  <meta
+   property="og:description"
+   content="Bantu korban bencana banjir dan tanah longsor di Aceh, Sumatera Utara, dan Sumatera Barat. Setiap donasi Anda akan sangat berarti bagi mereka yang membutuhkan."
+  />
+  <meta
+   property="og:image"
+   content="https://gdg-donation.pages.dev/og-image.jpg"
+  />
+  <meta property="og:locale" content="id_ID" />
+  <meta property="og:site_name" content="GDG Indonesia Donation" />
+
+  <!-- Twitter -->
+  <meta property="twitter:card" content="summary_large_image" />
+  <meta property="twitter:url" content="https://gdg-donation.pages.dev/" />
+  <meta
+   property="twitter:title"
+   content="Donasi Bencana Banjir dan Tanah Longsor - GDG Indonesia"
+  />
+  <meta
+   property="twitter:description"
+   content="Bantu korban bencana banjir dan tanah longsor di Aceh, Sumatera Utara, dan Sumatera Barat. Setiap donasi Anda akan sangat berarti bagi mereka yang membutuhkan."
+  />
+  <meta
+   property="twitter:image"
+   content="https://gdg-donation.pages.dev/og-image.jpg"
+  />
+
+  <!-- Additional Meta Tags -->
+  <meta name="theme-color" content="#4285f4" />
+  <link rel="canonical" href="https://gdg-donation.pages.dev/" />
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+
+  <link rel="stylesheet" href="/styles.css" />
+ </head>
+ <body>
+  <div class="container">
+   <!-- Hero Section -->
+   <header class="hero">
+    <div class="hero-slideshow">
+     <div
+      class="hero-slide active"
+      style="
+       background-image: url('/images/bingkai-sepekan-pilu-aceh-sumut-sumbar-dikepung-banjir-dan-longsor-1764341837579_169.jpeg');
+      "
+     ></div>
+     <div
+      class="hero-slide"
+      style="
+       background-image: url('/images/bingkai-sepekan-pilu-aceh-sumut-sumbar-dikepung-banjir-dan-longsor-1764341858269_169.jpeg');
+      "
+     ></div>
+     <div
+      class="hero-slide"
+      style="
+       background-image: url('/images/bingkai-sepekan-pilu-aceh-sumut-sumbar-dikepung-banjir-dan-longsor-1764341937049_169.jpeg');
+      "
+     ></div>
+    </div>
+    <div class="hero-overlay"></div>
+    <div class="hero-content">
+     <div class="logo-container">
+      <img src="/logo.png" alt="GDG Indonesia Logo" class="logo" />
+     </div>
+     <h1>Bantu Korban Bencana Banjir dan Tanah Longsor</h1>
+     <p class="subtitle">Aceh, Sumatera Utara, dan Sumatera Barat</p>
+     <p class="description">
+      GDG Indonesia melalui GDG Medan mengajak Anda untuk berpartisipasi dalam
+      aksi kemanusiaan membantu korban bencana banjir dan tanah longsor yang
+      melanda Aceh, Sumatera Utara, dan Sumatera Barat. Setiap donasi Anda akan
+      sangat berarti bagi mereka yang membutuhkan.
+     </p>
+    </div>
+   </header>
+
+   <!-- Donation Summary -->
+   <section class="summary">
+    <div class="summary-grid">
+     <div class="summary-card">
+      <h3>Total Terkumpul</h3>
+      <p class="amount" id="total-raised">Rp 0</p>
+     </div>
+     <div class="summary-card">
+      <h3>Total Disalurkan</h3>
+      <p class="amount" id="total-disbursed">Rp 0</p>
+     </div>
+     <div class="summary-card">
+      <h3>Jumlah Donatur</h3>
+      <p class="amount" id="donor-count">0</p>
+     </div>
+    </div>
+   </section>
+
+   <!-- Recent Donations -->
+   <section class="recent-donations">
+    <h2>Donasi Terkini</h2>
+    <div id="donations-list" class="donations-list">
+     <p class="loading">Memuat data...</p>
+    </div>
+   </section>
+
+   <!-- Donation Form -->
+   <section class="donation-form-section">
+    <h2>Form Donasi</h2>
+    <form id="donation-form" class="donation-form">
+     <div class="form-group">
+      <label for="name">Nama *</label>
+      <input type="text" id="name" name="name" required />
+     </div>
+
+     <div class="form-group">
+      <label for="email">Email *</label>
+      <input type="email" id="email" name="email" required />
+     </div>
+
+     <div class="form-group">
+      <label for="phone">Nomor Telepon</label>
+      <input type="tel" id="phone" name="phone" />
+     </div>
+
+     <div class="form-group">
+      <label for="amount">Jumlah Donasi (Rp) *</label>
+      <input
+       type="number"
+       id="amount"
+       name="amount"
+       min="10000"
+       step="1000"
+       required
+      />
+      <small>Minimum donasi: Rp 10.000</small>
+     </div>
+
+     <!-- Fee Breakdown -->
+     <div class="fee-breakdown" id="fee-breakdown" style="display: none">
+      <div class="breakdown-item">
+       <span>Jumlah Donasi:</span>
+       <span id="donation-amount-display">Rp 0</span>
+      </div>
+      <div class="breakdown-item">
+       <span>Biaya Transaksi (0.7%):</span>
+       <span id="fee-amount-display">Rp 0</span>
+      </div>
+      <div class="breakdown-item total">
+       <span>Total Pembayaran:</span>
+       <span id="total-amount-display">Rp 0</span>
+      </div>
+     </div>
+
+     <div class="form-group">
+      <label for="message">Pesan (Opsional)</label>
+      <textarea id="message" name="message" rows="4"></textarea>
+     </div>
+
+     <div class="form-group checkbox-group">
+      <label>
+       <input type="checkbox" id="anonymous" name="anonymous" />
+       Sembunyikan nama saya (Donasi Anonim)
+      </label>
+     </div>
+
+     <button type="submit" class="submit-btn" id="submit-btn">
+      Lanjutkan Pembayaran
+     </button>
+    </form>
+   </section>
+  </div>
+
+  <footer class="footer">
+   <p>
+    © 2025 GDG Indonesia - GDG Medan. Semua donasi akan disalurkan untuk
+    membantu korban bencana banjir dan tanah longsor.
+   </p>
+  </footer>
+
+  <script src="/app.js"></script>
+ </body>
+</html>

@@ -1,0 +1,14 @@
+node_modules/
+.wrangler/
+dist/
+.env
+*.log
+.DS_Store
+
+# Sensitive configuration files
+wrangler.toml
+
+# Local database files
+*.sqlite
+*.db
+

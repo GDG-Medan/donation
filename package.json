@@ -1,0 +1,22 @@
+{
+ "name": "gdg-donation-website",
+ "version": "1.0.0",
+ "description": "Donation website for GDG Indonesia flood relief",
+ "main": "index.js",
+ "scripts": {
+  "dev": "wrangler pages dev public --d1=DB",
+  "deploy": "wrangler pages deploy public",
+  "db:migrate": "wrangler d1 execute DB --file=schema.sql"
+ },
+ "keywords": [
+  "donation",
+  "cloudflare",
+  "midtrans"
+ ],
+ "author": "GDG Medan",
+ "license": "MIT",
+ "devDependencies": {
+  "@cloudflare/workers-types": "^4.20241106.0",
+  "wrangler": "^4.51.0"
+ }
+}
