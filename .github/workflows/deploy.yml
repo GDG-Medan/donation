@@ -9,6 +9,10 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+  deployments: write
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -26,10 +30,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run database migration (local)
-        run: npm run db:migrate
-        continue-on-error: true
-
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
@@ -37,5 +37,4 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           projectName: gdg-donation
           directory: public
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           wranglerVersion: "3"
