@@ -9,7 +9,20 @@ function formatCurrency(amount) {
 
 // Format date in WIB (UTC+7)
 function formatDate(dateString) {
- const date = new Date(dateString);
+ // Ensure the date is treated as UTC if it doesn't have timezone info
+ let date;
+ if (
+  dateString.includes("T") &&
+  !dateString.includes("Z") &&
+  !dateString.includes("+")
+ ) {
+  // If it's ISO format without timezone, treat as UTC
+  date = new Date(dateString + "Z");
+ } else {
+  date = new Date(dateString);
+ }
+
+ // Convert to WIB (UTC+7) - Asia/Jakarta
  return new Intl.DateTimeFormat("id-ID", {
   year: "numeric",
   month: "long",
