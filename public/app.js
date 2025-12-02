@@ -9,14 +9,20 @@ function formatCurrency(amount) {
 
 // Format date in WIB (UTC+7)
 function formatDate(dateString) {
- // Ensure the date is treated as UTC if it doesn't have timezone info
+ // SQLite DATETIME format: "2025-12-01 19:11:26" (stored as UTC)
+ // Convert to ISO format and treat as UTC
  let date;
- if (
+
+ // Handle SQLite datetime format (YYYY-MM-DD HH:MM:SS)
+ if (dateString.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)) {
+  // Replace space with T and add Z to indicate UTC
+  date = new Date(dateString.replace(" ", "T") + "Z");
+ } else if (
   dateString.includes("T") &&
   !dateString.includes("Z") &&
   !dateString.includes("+")
  ) {
-  // If it's ISO format without timezone, treat as UTC
+  // ISO format without timezone, treat as UTC
   date = new Date(dateString + "Z");
  } else {
   date = new Date(dateString);
