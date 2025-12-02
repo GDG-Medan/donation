@@ -58,6 +58,25 @@ export async function onRequest(context) {
    return handleCreateDisbursement(request, env);
   }
 
+  // Get or create disbursement activities endpoint
+  const activitiesMatch = path.match(
+   /^\/api\/admin\/disbursements\/(\d+)\/activities$/
+  );
+  if (activitiesMatch) {
+   const disbursementId = parseInt(activitiesMatch[1]);
+   if (method === "GET") {
+    return handleGetDisbursementActivities(disbursementId, request, env);
+   }
+   if (method === "POST") {
+    return handleCreateDisbursementActivity(disbursementId, request, env);
+   }
+  }
+
+  // File upload endpoint
+  if (path === "/api/admin/upload" && method === "POST") {
+   return handleFileUpload(request, env);
+  }
+
   return new Response("Not Found", { status: 404, headers: corsHeaders });
  } catch (error) {
   console.error("API Error:", error);
@@ -113,7 +132,7 @@ async function handleStats(env) {
 async function handleGetDonations(request, env) {
  const db = env.DB;
  const url = new URL(request.url);
- 
+
  // Get pagination parameters
  const page = parseInt(url.searchParams.get("page")) || 1;
  const limit = parseInt(url.searchParams.get("limit")) || 10;
@@ -415,7 +434,7 @@ async function handleAdminLogin(request, env) {
 async function handleGetDisbursementsPublic(request, env) {
  const db = env.DB;
  const url = new URL(request.url);
- 
+
  // Get pagination parameters
  const page = parseInt(url.searchParams.get("page")) || 1;
  const limit = parseInt(url.searchParams.get("limit")) || 10;
@@ -440,9 +459,29 @@ async function handleGetDisbursementsPublic(request, env) {
   .bind(limit, offset)
   .all();
 
+ // Get activities for each disbursement
+ const disbursementsWithActivities = await Promise.all(
+  (disbursements.results || []).map(async (disbursement) => {
+   const activities = await db
+    .prepare(
+     `SELECT id, activity_time, description, file_url, file_name, created_at 
+        FROM disbursement_activities 
+        WHERE disbursement_id = ? 
+        ORDER BY activity_time ASC`
+    )
+    .bind(disbursement.id)
+    .all();
+
+   return {
+    ...disbursement,
+    activities: activities.results || [],
+   };
+  })
+ );
+
  return new Response(
   JSON.stringify({
-   disbursements: disbursements.results || [],
+   disbursements: disbursementsWithActivities,
    pagination: {
     page: page,
     limit: limit,
@@ -480,7 +519,27 @@ async function handleGetDisbursements(request, env) {
   .prepare("SELECT * FROM disbursements ORDER BY created_at DESC")
   .all();
 
- return new Response(JSON.stringify(disbursements.results || []), {
+ // Get activities for each disbursement
+ const disbursementsWithActivities = await Promise.all(
+  (disbursements.results || []).map(async (disbursement) => {
+   const activities = await db
+    .prepare(
+     `SELECT id, activity_time, description, file_url, file_name, created_at 
+        FROM disbursement_activities 
+        WHERE disbursement_id = ? 
+        ORDER BY activity_time ASC`
+    )
+    .bind(disbursement.id)
+    .all();
+
+   return {
+    ...disbursement,
+    activities: activities.results || [],
+   };
+  })
+ );
+
+ return new Response(JSON.stringify(disbursementsWithActivities), {
   headers: {
    "Content-Type": "application/json",
    "Access-Control-Allow-Origin": "*",
@@ -526,6 +585,284 @@ async function handleCreateDisbursement(request, env) {
    "Access-Control-Allow-Origin": "*",
   },
  });
+}
+
+// Get disbursement activities (admin only)
+async function handleGetDisbursementActivities(disbursementId, request, env) {
+ const db = env.DB;
+ const token = request.headers.get("Authorization")?.replace("Bearer ", "");
+
+ if (!token || !(await verifyAdminToken(token, db))) {
+  return new Response(JSON.stringify({ error: "Unauthorized" }), {
+   status: 401,
+   headers: {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+   },
+  });
+ }
+
+ // Verify disbursement exists
+ const disbursement = await db
+  .prepare("SELECT id FROM disbursements WHERE id = ?")
+  .bind(disbursementId)
+  .first();
+
+ if (!disbursement) {
+  return new Response(JSON.stringify({ error: "Disbursement not found" }), {
+   status: 404,
+   headers: {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+   },
+  });
+ }
+
+ const activities = await db
+  .prepare(
+   `SELECT id, activity_time, description, file_url, file_name, created_at 
+      FROM disbursement_activities 
+      WHERE disbursement_id = ? 
+      ORDER BY activity_time ASC`
+  )
+  .bind(disbursementId)
+  .all();
+
+ return new Response(JSON.stringify(activities.results || []), {
+  headers: {
+   "Content-Type": "application/json",
+   "Access-Control-Allow-Origin": "*",
+  },
+ });
+}
+
+// Create disbursement activity (admin only)
+async function handleCreateDisbursementActivity(disbursementId, request, env) {
+ const db = env.DB;
+ const token = request.headers.get("Authorization")?.replace("Bearer ", "");
+
+ if (!token || !(await verifyAdminToken(token, db))) {
+  return new Response(JSON.stringify({ error: "Unauthorized" }), {
+   status: 401,
+   headers: {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+   },
+  });
+ }
+
+ // Verify disbursement exists
+ const disbursement = await db
+  .prepare("SELECT id FROM disbursements WHERE id = ?")
+  .bind(disbursementId)
+  .first();
+
+ if (!disbursement) {
+  return new Response(JSON.stringify({ error: "Disbursement not found" }), {
+   status: 404,
+   headers: {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+   },
+  });
+ }
+
+ const { activity_time, description, file_url, file_name } =
+  await request.json();
+
+ if (!activity_time || !description) {
+  return new Response(
+   JSON.stringify({
+    error: "Invalid activity data",
+    message: "activity_time and description are required",
+   }),
+   {
+    status: 400,
+    headers: {
+     "Content-Type": "application/json",
+     "Access-Control-Allow-Origin": "*",
+    },
+   }
+  );
+ }
+
+ await db
+  .prepare(
+   "INSERT INTO disbursement_activities (disbursement_id, activity_time, description, file_url, file_name) VALUES (?, ?, ?, ?, ?)"
+  )
+  .bind(
+   disbursementId,
+   activity_time,
+   description,
+   file_url || null,
+   file_name || null
+  )
+  .run();
+
+ return new Response(JSON.stringify({ success: true }), {
+  headers: {
+   "Content-Type": "application/json",
+   "Access-Control-Allow-Origin": "*",
+  },
+ });
+}
+
+// Handle file upload to R2 (admin only)
+async function handleFileUpload(request, env) {
+ const token = request.headers.get("Authorization")?.replace("Bearer ", "");
+ const db = env.DB;
+
+ if (!token || !(await verifyAdminToken(token, db))) {
+  return new Response(JSON.stringify({ error: "Unauthorized" }), {
+   status: 401,
+   headers: {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+   },
+  });
+ }
+
+ try {
+  const formData = await request.formData();
+  const file = formData.get("file");
+
+  if (!file || !(file instanceof File)) {
+   return new Response(JSON.stringify({ error: "No file provided" }), {
+    status: 400,
+    headers: {
+     "Content-Type": "application/json",
+     "Access-Control-Allow-Origin": "*",
+    },
+   });
+  }
+
+  // Validate file size (max 10MB)
+  const maxSize = 10 * 1024 * 1024; // 10MB
+  if (file.size > maxSize) {
+   return new Response(
+    JSON.stringify({ error: "File size exceeds 10MB limit" }),
+    {
+     status: 400,
+     headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+     },
+    }
+   );
+  }
+
+  // Validate file type (images and common document types)
+  const allowedTypes = [
+   "image/jpeg",
+   "image/jpg",
+   "image/png",
+   "image/gif",
+   "image/webp",
+   "application/pdf",
+   "video/mp4",
+   "video/quicktime",
+  ];
+  if (!allowedTypes.includes(file.type)) {
+   return new Response(
+    JSON.stringify({
+     error: "File type not allowed",
+     message: "Allowed types: images, PDF, MP4",
+    }),
+    {
+     status: 400,
+     headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+     },
+    }
+   );
+  }
+
+  // Generate unique filename
+  const timestamp = Date.now();
+  const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+  const fileExtension = sanitizedName.split(".").pop();
+  const fileName = `activity_${timestamp}_${Math.random()
+   .toString(36)
+   .substring(7)}.${fileExtension}`;
+
+  // Upload to R2
+  const r2Bucket = env.ACTIVITY_FILES;
+  if (!r2Bucket) {
+   return new Response(JSON.stringify({ error: "R2 bucket not configured" }), {
+    status: 500,
+    headers: {
+     "Content-Type": "application/json",
+     "Access-Control-Allow-Origin": "*",
+    },
+   });
+  }
+
+  const fileBuffer = await file.arrayBuffer();
+  await r2Bucket.put(fileName, fileBuffer, {
+   httpMetadata: {
+    contentType: file.type,
+    cacheControl: "public, max-age=31536000",
+   },
+   customMetadata: {
+    originalName: file.name,
+    uploadedAt: new Date().toISOString(),
+   },
+  });
+
+  // Generate public URL
+  // Option 1: If you have a custom domain for R2, use it
+  // Option 2: Use R2 public URL format (bucket must be public)
+  // For R2 public buckets, URL format is: https://<account-id>.r2.cloudflarestorage.com/<bucket-name>/<object-key>
+  // Or if using custom domain: https://<custom-domain>/<object-key>
+
+  const customDomain = env.R2_PUBLIC_DOMAIN;
+  let fileUrl;
+
+  if (customDomain) {
+   // Use custom domain if configured
+   fileUrl = `https://${customDomain}/${fileName}`;
+  } else {
+   // For R2 public bucket, construct URL
+   // Note: You need to make your R2 bucket public and configure CORS
+   // The URL format depends on your R2 setup
+   // For now, we'll store the file key and construct URL on frontend
+   // You can also use: `https://<your-account-id>.r2.cloudflarestorage.com/activity-files/${fileName}`
+   fileUrl = fileName; // Store key, will be handled by frontend or you can set R2_PUBLIC_DOMAIN env var
+  }
+
+  return new Response(
+   JSON.stringify({
+    success: true,
+    file_url: fileUrl,
+    file_key: fileName,
+    file_name: file.name,
+    file_size: file.size,
+    file_type: file.type,
+   }),
+   {
+    headers: {
+     "Content-Type": "application/json",
+     "Access-Control-Allow-Origin": "*",
+    },
+   }
+  );
+ } catch (error) {
+  console.error("File upload error:", error);
+  return new Response(
+   JSON.stringify({
+    error: "File upload failed",
+    message: error.message,
+   }),
+   {
+    status: 500,
+    headers: {
+     "Content-Type": "application/json",
+     "Access-Control-Allow-Origin": "*",
+    },
+   }
+  );
+ }
 }
 
 // Verify admin token

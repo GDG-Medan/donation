@@ -28,9 +28,23 @@ CREATE TABLE IF NOT EXISTS admin_sessions (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Disbursement activities table (timeline/activity log for each disbursement)
+CREATE TABLE IF NOT EXISTS disbursement_activities (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  disbursement_id INTEGER NOT NULL,
+  activity_time DATETIME NOT NULL,
+  description TEXT NOT NULL,
+  file_url TEXT,
+  file_name TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (disbursement_id) REFERENCES disbursements(id) ON DELETE CASCADE
+);
+
 -- Indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_donations_status ON donations(status);
 CREATE INDEX IF NOT EXISTS idx_donations_created_at ON donations(created_at);
 CREATE INDEX IF NOT EXISTS idx_admin_sessions_token ON admin_sessions(token);
 CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_disbursement_activities_disbursement_id ON disbursement_activities(disbursement_id);
+CREATE INDEX IF NOT EXISTS idx_disbursement_activities_activity_time ON disbursement_activities(activity_time);
 

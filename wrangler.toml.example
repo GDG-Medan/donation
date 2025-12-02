@@ -8,6 +8,10 @@ binding = "DB"
 database_name = "gdg-donation-db"
 database_id = "YOUR_D1_DATABASE_ID"
 
+[[r2_buckets]]
+binding = "ACTIVITY_FILES"
+bucket_name = "activity-files"
+
 # Production environment
 [env.production]
 name = "gdg-donation"
@@ -17,8 +21,14 @@ binding = "DB"
 database_name = "gdg-donation-db"
 database_id = "YOUR_D1_DATABASE_ID"
 
+[[env.production.r2_buckets]]
+binding = "ACTIVITY_FILES"
+bucket_name = "activity-files"
+
 [env.production.vars]
 MIDTRANS_SERVER_KEY = "YOUR_MIDTRANS_SERVER_KEY"
 MIDTRANS_CLIENT_KEY = "YOUR_MIDTRANS_CLIENT_KEY"
 ADMIN_PASSWORD_HASH = "YOUR_ADMIN_PASSWORD"
+# Optional: Custom domain for R2 public files (e.g., "files.yourdomain.com")
+# R2_PUBLIC_DOMAIN = "files.yourdomain.com"
 

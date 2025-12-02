@@ -48,12 +48,64 @@
    .disbursement-item {
     padding: 15px;
     border-bottom: 1px solid var(--border-color);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
    }
    .disbursement-item:last-child {
     border-bottom: none;
+   }
+   .disbursement-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+   }
+   .disbursement-actions {
+    display: flex;
+    gap: 10px;
+   }
+   .activity-btn {
+    padding: 5px 15px;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+   }
+   .activity-btn:hover {
+    opacity: 0.9;
+   }
+   .activities-section {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid var(--border-color);
+    display: none;
+   }
+   .activities-section.active {
+    display: block;
+   }
+   .activity-form {
+    background: var(--bg-color);
+    padding: 15px;
+    border-radius: 6px;
+    margin-bottom: 15px;
+   }
+   .activity-item {
+    padding: 10px;
+    background: var(--bg-color);
+    border-radius: 6px;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: start;
+   }
+   .activity-time {
+    font-weight: 600;
+    color: var(--primary-color);
+    margin-bottom: 5px;
+   }
+   .activity-description {
+    color: var(--text-color);
+    flex: 1;
    }
    .logout-btn {
     float: right;
@@ -223,6 +275,196 @@
     }).format(date);
    }
 
+   // Format datetime for input (YYYY-MM-DDTHH:mm)
+   function formatDateTimeForInput(dateString) {
+    let date;
+    if (dateString.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)) {
+     date = new Date(dateString.replace(" ", "T") + "Z");
+    } else if (
+     dateString.includes("T") &&
+     !dateString.includes("Z") &&
+     !dateString.includes("+")
+    ) {
+     date = new Date(dateString + "Z");
+    } else {
+     date = new Date(dateString);
+    }
+
+    // Convert to WIB (UTC+7) and format for datetime-local input
+    const wibDate = new Date(date.getTime() + 7 * 60 * 60 * 1000);
+    const year = wibDate.getUTCFullYear();
+    const month = String(wibDate.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(wibDate.getUTCDate()).padStart(2, "0");
+    const hours = String(wibDate.getUTCHours()).padStart(2, "0");
+    const minutes = String(wibDate.getUTCMinutes()).padStart(2, "0");
+
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+   }
+
+   // Render activities list
+   function renderActivities(activities) {
+    if (activities.length === 0) {
+     return '<p style="color: var(--text-light); font-style: italic;">Belum ada aktivitas.</p>';
+    }
+
+    return activities
+     .map(
+      (activity) => `
+        <div class="activity-item">
+          <div style="flex: 1;">
+            <div class="activity-time">${formatDate(
+             activity.activity_time
+            )}</div>
+            <div class="activity-description">${activity.description}</div>
+            ${
+             activity.file_url
+              ? `
+              <div style="margin-top: 10px;">
+                <a 
+                  href="${activity.file_url}" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  style="display: inline-flex; align-items: center; gap: 5px; color: var(--primary-color); text-decoration: none; font-size: 0.9rem;"
+                >
+                  <span>📎</span>
+                  <span>${activity.file_name || "Lihat File"}</span>
+                </a>
+                ${
+                 activity.file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+                  ? `<div style="margin-top: 8px;"><img src="${
+                     activity.file_url
+                    }" alt="${
+                     activity.file_name || "Activity image"
+                    }" style="max-width: 100%; max-height: 200px; border-radius: 4px; border: 1px solid var(--border-color);" /></div>`
+                  : ""
+                }
+              </div>
+            `
+              : ""
+            }
+          </div>
+        </div>
+      `
+     )
+     .join("");
+   }
+
+   // Toggle activities section
+   function toggleActivities(disbursementId) {
+    const section = document.getElementById(`activities-${disbursementId}`);
+    section.classList.toggle("active");
+   }
+
+   // Add activity
+   async function addActivity(event, disbursementId) {
+    event.preventDefault();
+
+    const timeInput = document.getElementById(
+     `activity-time-${disbursementId}`
+    );
+    const descriptionInput = document.getElementById(
+     `activity-description-${disbursementId}`
+    );
+    const fileInput = document.getElementById(
+     `activity-file-${disbursementId}`
+    );
+    const progressDiv = document.getElementById(
+     `file-upload-progress-${disbursementId}`
+    );
+
+    // Convert local datetime to UTC for storage
+    const localDateTime = timeInput.value; // Format: YYYY-MM-DDTHH:mm
+    const localDate = new Date(localDateTime);
+    // Convert from WIB (UTC+7) to UTC
+    const utcDate = new Date(localDate.getTime() - 7 * 60 * 60 * 1000);
+    const activityTime = utcDate.toISOString().slice(0, 19).replace("T", " ");
+
+    const submitBtn = event.target.querySelector('button[type="submit"]');
+    const originalText = submitBtn.textContent;
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Memproses...";
+
+    let fileUrl = null;
+    let fileName = null;
+
+    try {
+     // Upload file if provided
+     if (fileInput.files && fileInput.files.length > 0) {
+      progressDiv.style.display = "block";
+      const file = fileInput.files[0];
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const uploadResponse = await fetch("/api/admin/upload", {
+       method: "POST",
+       headers: {
+        Authorization: `Bearer ${adminToken}`,
+       },
+       body: formData,
+      });
+
+      if (uploadResponse.status === 401) {
+       logout();
+       return;
+      }
+
+      if (!uploadResponse.ok) {
+       const error = await uploadResponse.json();
+       throw new Error(error.error || "File upload failed");
+      }
+
+      const uploadData = await uploadResponse.json();
+      fileUrl = uploadData.file_url;
+      fileName = uploadData.file_name;
+      progressDiv.style.display = "none";
+     }
+
+     // Create activity
+     const response = await fetch(
+      `/api/admin/disbursements/${disbursementId}/activities`,
+      {
+       method: "POST",
+       headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminToken}`,
+       },
+       body: JSON.stringify({
+        activity_time: activityTime,
+        description: descriptionInput.value,
+        file_url: fileUrl,
+        file_name: fileName,
+       }),
+      }
+     );
+
+     if (response.status === 401) {
+      logout();
+      return;
+     }
+
+     if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || "Failed to create activity");
+     }
+
+     // Reset form
+     timeInput.value = "";
+     descriptionInput.value = "";
+     fileInput.value = "";
+     progressDiv.style.display = "none";
+
+     // Reload disbursements to show new activity
+     await loadDisbursements();
+    } catch (error) {
+     alert("Terjadi kesalahan: " + error.message);
+     progressDiv.style.display = "none";
+    } finally {
+     submitBtn.disabled = false;
+     submitBtn.textContent = originalText;
+    }
+   }
+
    // Load admin data
    async function loadAdminData() {
     await loadStats();
@@ -282,16 +524,74 @@
       .map(
        (disbursement) => `
           <div class="disbursement-item">
-            <div>
-              <div style="font-weight: 600; margin-bottom: 5px;">${
-               disbursement.description
-              }</div>
-              <div style="font-size: 0.85rem; color: var(--text-light);">${formatDate(
-               disbursement.created_at
-              )}</div>
+            <div class="disbursement-header">
+              <div>
+                <div style="font-weight: 600; margin-bottom: 5px;">${
+                 disbursement.description
+                }</div>
+                <div style="font-size: 0.85rem; color: var(--text-light);">${formatDate(
+                 disbursement.created_at
+                )}</div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 15px;">
+                <div style="font-size: 1.2rem; font-weight: bold; color: var(--primary-color);">
+                  ${formatCurrency(disbursement.amount)}
+                </div>
+                <button class="activity-btn" onclick="toggleActivities(${
+                 disbursement.id
+                })">
+                  ${
+                   (disbursement.activities || []).length > 0
+                    ? "Lihat Aktivitas"
+                    : "Tambah Aktivitas"
+                  }
+                </button>
+              </div>
             </div>
-            <div style="font-size: 1.2rem; font-weight: bold; color: var(--primary-color);">
-              ${formatCurrency(disbursement.amount)}
+            <div class="activities-section" id="activities-${disbursement.id}">
+              <div class="activity-form">
+                <h4 style="margin-bottom: 10px;">Tambah Aktivitas</h4>
+                <form onsubmit="addActivity(event, ${disbursement.id})">
+                  <div class="form-group">
+                    <label>Waktu Aktivitas (WIB) *</label>
+                    <input 
+                      type="datetime-local" 
+                      id="activity-time-${disbursement.id}" 
+                      required
+                      style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px;"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label>Deskripsi Aktivitas *</label>
+                    <textarea 
+                      id="activity-description-${disbursement.id}" 
+                      rows="3" 
+                      required
+                      placeholder="Contoh: Tiba di lokasi untuk mendistribusikan paket sembako"
+                      style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px;"
+                    ></textarea>
+                  </div>
+                  <div class="form-group">
+                    <label>Upload File (Opsional)</label>
+                    <input 
+                      type="file" 
+                      id="activity-file-${disbursement.id}" 
+                      accept="image/*,application/pdf,video/mp4"
+                      style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px;"
+                    />
+                    <small style="color: var(--text-light);">Format: Gambar, PDF, atau Video MP4 (maks. 10MB)</small>
+                    <div id="file-upload-progress-${
+                     disbursement.id
+                    }" style="display: none; margin-top: 5px;">
+                      <div style="font-size: 0.85rem; color: var(--primary-color);">Mengupload file...</div>
+                    </div>
+                  </div>
+                  <button type="submit" class="submit-btn" style="width: auto;">Tambah Aktivitas</button>
+                </form>
+              </div>
+              <div id="activities-list-${disbursement.id}">
+                ${renderActivities(disbursement.activities || [])}
+              </div>
             </div>
           </div>
         `

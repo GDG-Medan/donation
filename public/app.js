@@ -132,44 +132,116 @@ async function loadDisbursements(page = 1) {
   const pagination = data.pagination || {};
 
   if (disbursements.length === 0) {
-   listElement.innerHTML =
-    '<p class="empty">Belum ada penyaluran donasi.</p>';
+   listElement.innerHTML = '<p class="empty">Belum ada penyaluran donasi.</p>';
    updateDisbursementsPaginationControls(pagination);
    return;
   }
 
   listElement.innerHTML = disbursements
-   .map(
-    (disbursement) => `
+   .map((disbursement) => {
+    const activities = disbursement.activities || [];
+    const hasActivities = activities.length > 0;
+
+    return `
       <div class="disbursement-item">
-        <div class="disbursement-info">
-          <div class="disbursement-description">
-            ${disbursement.description}
+        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: ${
+         hasActivities ? "10px" : "0"
+        };">
+          <div class="disbursement-info">
+            <div class="disbursement-description">
+              ${disbursement.description}
+            </div>
+            <div class="disbursement-date">${formatDate(
+             disbursement.created_at
+            )}</div>
           </div>
-          <div class="disbursement-date">${formatDate(disbursement.created_at)}</div>
+          <div class="disbursement-amount">${formatCurrency(
+           disbursement.amount
+          )}</div>
         </div>
-        <div class="disbursement-amount">${formatCurrency(disbursement.amount)}</div>
+        ${
+         hasActivities
+          ? `
+          <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(0,0,0,0.1);">
+            <h4 style="margin-bottom: 10px; font-size: 0.95rem; color: var(--text-color);">Timeline Aktivitas:</h4>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              ${activities
+               .map(
+                (activity) => `
+                <div style="padding: 10px; background: rgba(66, 133, 244, 0.05); border-radius: 6px; border-left: 3px solid var(--primary-color);">
+                  <div style="font-weight: 600; color: var(--primary-color); margin-bottom: 5px; font-size: 0.9rem;">
+                    ${formatDate(activity.activity_time)}
+                  </div>
+                  <div style="color: var(--text-color); font-size: 0.9rem; margin-bottom: ${
+                   activity.file_url ? "8px" : "0"
+                  };">
+                    ${activity.description}
+                  </div>
+                  ${
+                   activity.file_url
+                    ? `
+                    <div style="margin-top: 8px;">
+                      <a 
+                        href="${activity.file_url}" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        style="display: inline-flex; align-items: center; gap: 5px; color: var(--primary-color); text-decoration: none; font-size: 0.85rem; margin-bottom: 8px;"
+                      >
+                        <span>📎</span>
+                        <span>${activity.file_name || "Lihat File"}</span>
+                      </a>
+                      ${
+                       activity.file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+                        ? `<div style="margin-top: 8px;"><img src="${
+                           activity.file_url
+                          }" alt="${
+                           activity.file_name || "Activity image"
+                          }" style="max-width: 100%; max-height: 300px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.1);" loading="lazy" /></div>`
+                        : activity.file_url.match(/\.(mp4|mov)$/i)
+                        ? `<div style="margin-top: 8px;"><video src="${activity.file_url}" controls style="max-width: 100%; max-height: 300px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.1);" /></div>`
+                        : ""
+                      }
+                    </div>
+                  `
+                    : ""
+                  }
+                </div>
+              `
+               )
+               .join("")}
+            </div>
+          </div>
+        `
+          : ""
+        }
       </div>
-    `
-   )
+    `;
+   })
    .join("");
 
   updateDisbursementsPaginationControls(pagination);
  } catch (error) {
   console.error("Error loading disbursements:", error);
-  listElement.innerHTML = '<p class="empty">Gagal memuat data penyaluran donasi.</p>';
+  listElement.innerHTML =
+   '<p class="empty">Gagal memuat data penyaluran donasi.</p>';
   updateDisbursementsPaginationControls({});
  }
 }
 
 // Update disbursements pagination controls
 function updateDisbursementsPaginationControls(pagination) {
- const paginationElement = document.getElementById("disbursements-pagination-controls");
+ const paginationElement = document.getElementById(
+  "disbursements-pagination-controls"
+ );
 
  if (!paginationElement) return;
 
- const { page = 1, total_pages = 1, has_next = false, has_prev = false } =
-  pagination;
+ const {
+  page = 1,
+  total_pages = 1,
+  has_next = false,
+  has_prev = false,
+ } = pagination;
 
  if (total_pages <= 1) {
   paginationElement.innerHTML = "";
@@ -249,8 +321,12 @@ function updatePaginationControls(pagination) {
 
  if (!paginationElement) return;
 
- const { page = 1, total_pages = 1, has_next = false, has_prev = false } =
-  pagination;
+ const {
+  page = 1,
+  total_pages = 1,
+  has_next = false,
+  has_prev = false,
+ } = pagination;
 
  if (total_pages <= 1) {
   paginationElement.innerHTML = "";
