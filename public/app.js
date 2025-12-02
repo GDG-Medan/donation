@@ -141,12 +141,11 @@ async function loadDisbursements(page = 1) {
    .map((disbursement) => {
     const activities = disbursement.activities || [];
     const hasActivities = activities.length > 0;
+    const activityCount = activities.length;
 
     return `
       <div class="disbursement-item">
-        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: ${
-         hasActivities ? "10px" : "0"
-        };">
+        <div class="disbursement-header">
           <div class="disbursement-info">
             <div class="disbursement-description">
               ${disbursement.description}
@@ -155,50 +154,63 @@ async function loadDisbursements(page = 1) {
              disbursement.created_at
             )}</div>
           </div>
-          <div class="disbursement-amount">${formatCurrency(
-           disbursement.amount
-          )}</div>
+          <div class="disbursement-right">
+            <div class="disbursement-amount">${formatCurrency(
+             disbursement.amount
+            )}</div>
+            ${
+             hasActivities
+              ? `
+              <button 
+                class="activity-toggle-btn" 
+                onclick="toggleActivityTimeline(${disbursement.id})"
+                aria-expanded="false"
+                id="toggle-btn-${disbursement.id}"
+              >
+                <span class="activity-toggle-text">Lihat Timeline</span>
+                <span class="activity-count-badge">${activityCount}</span>
+                <span class="activity-toggle-icon">▼</span>
+              </button>
+            `
+              : ""
+            }
+          </div>
         </div>
         ${
          hasActivities
           ? `
-          <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(0,0,0,0.1);">
-            <h4 style="margin-bottom: 10px; font-size: 0.95rem; color: var(--text-color);">Timeline Aktivitas:</h4>
-            <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div class="activity-timeline" id="timeline-${disbursement.id}" style="display: none;">
+            <div class="activity-timeline-content">
               ${activities
                .map(
                 (activity) => `
-                <div style="padding: 10px; background: rgba(66, 133, 244, 0.05); border-radius: 6px; border-left: 3px solid var(--primary-color);">
-                  <div style="font-weight: 600; color: var(--primary-color); margin-bottom: 5px; font-size: 0.9rem;">
-                    ${formatDate(activity.activity_time)}
-                  </div>
-                  <div style="color: var(--text-color); font-size: 0.9rem; margin-bottom: ${
-                   activity.file_url ? "8px" : "0"
-                  };">
-                    ${activity.description}
-                  </div>
+                <div class="activity-item">
+                  <div class="activity-time">${formatDate(
+                   activity.activity_time
+                  )}</div>
+                  <div class="activity-description">${activity.description}</div>
                   ${
                    activity.file_url
                     ? `
-                    <div style="margin-top: 8px;">
+                    <div class="activity-file">
                       <a 
                         href="${activity.file_url}" 
                         target="_blank" 
                         rel="noopener noreferrer"
-                        style="display: inline-flex; align-items: center; gap: 5px; color: var(--primary-color); text-decoration: none; font-size: 0.85rem; margin-bottom: 8px;"
+                        class="activity-file-link"
                       >
                         <span>📎</span>
                         <span>${activity.file_name || "Lihat File"}</span>
                       </a>
                       ${
                        activity.file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
-                        ? `<div style="margin-top: 8px;"><img src="${
+                        ? `<div class="activity-image"><img src="${
                            activity.file_url
                           }" alt="${
                            activity.file_name || "Activity image"
-                          }" style="max-width: 100%; max-height: 300px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.1);" loading="lazy" /></div>`
+                          }" loading="lazy" /></div>`
                         : activity.file_url.match(/\.(mp4|mov)$/i)
-                        ? `<div style="margin-top: 8px;"><video src="${activity.file_url}" controls style="max-width: 100%; max-height: 300px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.1);" /></div>`
+                        ? `<div class="activity-video"><video src="${activity.file_url}" controls /></div>`
                         : ""
                       }
                     </div>
@@ -227,6 +239,31 @@ async function loadDisbursements(page = 1) {
   updateDisbursementsPaginationControls({});
  }
 }
+
+// Toggle activity timeline dropdown
+window.toggleActivityTimeline = function (disbursementId) {
+ const timeline = document.getElementById(`timeline-${disbursementId}`);
+ const toggleBtn = document.getElementById(`toggle-btn-${disbursementId}`);
+ 
+ if (!timeline || !toggleBtn) return;
+ 
+ const icon = toggleBtn.querySelector(".activity-toggle-icon");
+ const text = toggleBtn.querySelector(".activity-toggle-text");
+
+ if (timeline.style.display === "none" || !timeline.style.display) {
+  timeline.style.display = "block";
+  toggleBtn.setAttribute("aria-expanded", "true");
+  if (icon) icon.textContent = "▲";
+  if (text) text.textContent = "Sembunyikan Timeline";
+  toggleBtn.classList.add("active");
+ } else {
+  timeline.style.display = "none";
+  toggleBtn.setAttribute("aria-expanded", "false");
+  if (icon) icon.textContent = "▼";
+  if (text) text.textContent = "Lihat Timeline";
+  toggleBtn.classList.remove("active");
+ }
+};
 
 // Update disbursements pagination controls
 function updateDisbursementsPaginationControls(pagination) {
