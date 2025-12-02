@@ -33,6 +33,11 @@ export async function onRequest(context) {
    return handleCreateDonation(request, env);
   }
 
+  // Get disbursements endpoint (public)
+  if (path === "/api/disbursements" && method === "GET") {
+   return handleGetDisbursementsPublic(request, env);
+  }
+
   // Midtrans webhook endpoint
   if (path === "/api/midtrans/notification" && method === "POST") {
    return handleMidtransWebhook(request, env);
@@ -404,6 +409,56 @@ async function handleAdminLogin(request, env) {
    "Access-Control-Allow-Origin": "*",
   },
  });
+}
+
+// Get disbursements (public)
+async function handleGetDisbursementsPublic(request, env) {
+ const db = env.DB;
+ const url = new URL(request.url);
+ 
+ // Get pagination parameters
+ const page = parseInt(url.searchParams.get("page")) || 1;
+ const limit = parseInt(url.searchParams.get("limit")) || 10;
+ const offset = (page - 1) * limit;
+
+ // Get total count for pagination
+ const countResult = await db
+  .prepare("SELECT COUNT(*) as total FROM disbursements")
+  .first();
+
+ const totalCount = countResult?.total || 0;
+ const totalPages = Math.ceil(totalCount / limit);
+
+ // Get paginated disbursements
+ const disbursements = await db
+  .prepare(
+   `SELECT id, amount, description, created_at 
+      FROM disbursements 
+      ORDER BY created_at DESC 
+      LIMIT ? OFFSET ?`
+  )
+  .bind(limit, offset)
+  .all();
+
+ return new Response(
+  JSON.stringify({
+   disbursements: disbursements.results || [],
+   pagination: {
+    page: page,
+    limit: limit,
+    total_count: totalCount,
+    total_pages: totalPages,
+    has_next: page < totalPages,
+    has_prev: page > 1,
+   },
+  }),
+  {
+   headers: {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+   },
+  }
+ );
 }
 
 // Get disbursements (admin only)

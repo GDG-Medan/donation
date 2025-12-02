@@ -62,6 +62,7 @@ async function loadStats() {
 
 // Pagination state
 let currentPage = 1;
+let currentDisbursementsPage = 1;
 const itemsPerPage = 10;
 
 // Load and display recent donations
@@ -113,6 +114,133 @@ async function loadRecentDonations(page = 1) {
   listElement.innerHTML = '<p class="empty">Gagal memuat data donasi.</p>';
   updatePaginationControls({});
  }
+}
+
+// Load and display disbursements
+async function loadDisbursements(page = 1) {
+ const listElement = document.getElementById("disbursements-list");
+ currentDisbursementsPage = page;
+
+ try {
+  const response = await fetch(
+   `/api/disbursements?page=${page}&limit=${itemsPerPage}`
+  );
+  if (!response.ok) throw new Error("Failed to load disbursements");
+
+  const data = await response.json();
+  const disbursements = data.disbursements || [];
+  const pagination = data.pagination || {};
+
+  if (disbursements.length === 0) {
+   listElement.innerHTML =
+    '<p class="empty">Belum ada penyaluran donasi.</p>';
+   updateDisbursementsPaginationControls(pagination);
+   return;
+  }
+
+  listElement.innerHTML = disbursements
+   .map(
+    (disbursement) => `
+      <div class="disbursement-item">
+        <div class="disbursement-info">
+          <div class="disbursement-description">
+            ${disbursement.description}
+          </div>
+          <div class="disbursement-date">${formatDate(disbursement.created_at)}</div>
+        </div>
+        <div class="disbursement-amount">${formatCurrency(disbursement.amount)}</div>
+      </div>
+    `
+   )
+   .join("");
+
+  updateDisbursementsPaginationControls(pagination);
+ } catch (error) {
+  console.error("Error loading disbursements:", error);
+  listElement.innerHTML = '<p class="empty">Gagal memuat data penyaluran donasi.</p>';
+  updateDisbursementsPaginationControls({});
+ }
+}
+
+// Update disbursements pagination controls
+function updateDisbursementsPaginationControls(pagination) {
+ const paginationElement = document.getElementById("disbursements-pagination-controls");
+
+ if (!paginationElement) return;
+
+ const { page = 1, total_pages = 1, has_next = false, has_prev = false } =
+  pagination;
+
+ if (total_pages <= 1) {
+  paginationElement.innerHTML = "";
+  return;
+ }
+
+ let paginationHTML = '<div class="pagination">';
+
+ // Previous button
+ paginationHTML += `
+    <button 
+      class="pagination-btn ${!has_prev ? "disabled" : ""}" 
+      ${!has_prev ? "disabled" : `onclick="loadDisbursements(${page - 1})"`}
+    >
+      Sebelumnya
+    </button>
+  `;
+
+ // Page numbers
+ const maxVisiblePages = 5;
+ let startPage = Math.max(1, page - Math.floor(maxVisiblePages / 2));
+ let endPage = Math.min(total_pages, startPage + maxVisiblePages - 1);
+
+ if (endPage - startPage < maxVisiblePages - 1) {
+  startPage = Math.max(1, endPage - maxVisiblePages + 1);
+ }
+
+ if (startPage > 1) {
+  paginationHTML += `
+      <button class="pagination-btn" onclick="loadDisbursements(1)">1</button>
+    `;
+  if (startPage > 2) {
+   paginationHTML += `<span class="pagination-ellipsis">...</span>`;
+  }
+ }
+
+ for (let i = startPage; i <= endPage; i++) {
+  paginationHTML += `
+      <button 
+        class="pagination-btn ${i === page ? "active" : ""}" 
+        onclick="loadDisbursements(${i})"
+      >
+        ${i}
+      </button>
+    `;
+ }
+
+ if (endPage < total_pages) {
+  if (endPage < total_pages - 1) {
+   paginationHTML += `<span class="pagination-ellipsis">...</span>`;
+  }
+  paginationHTML += `
+      <button class="pagination-btn" onclick="loadDisbursements(${total_pages})">
+        ${total_pages}
+      </button>
+    `;
+ }
+
+ // Next button
+ paginationHTML += `
+    <button 
+      class="pagination-btn ${!has_next ? "disabled" : ""}" 
+      ${!has_next ? "disabled" : `onclick="loadDisbursements(${page + 1})"`}
+    >
+      Selanjutnya
+    </button>
+  `;
+
+ paginationHTML += "</div>";
+
+ paginationElement.innerHTML = paginationHTML;
 }
 
 // Update pagination controls
@@ -301,14 +429,16 @@ function initHeroSlideshow() {
 document.addEventListener("DOMContentLoaded", () => {
  loadStats();
  loadRecentDonations();
+ loadDisbursements();
 
  // Initialize hero slideshow
  initHeroSlideshow();
 
- // Refresh stats and donations every 30 seconds
+ // Refresh stats, donations, and disbursements every 30 seconds
  setInterval(() => {
   loadStats();
   loadRecentDonations(currentPage);
+  loadDisbursements(currentDisbursementsPage);
  }, 30000);
 
  // Handle form submission

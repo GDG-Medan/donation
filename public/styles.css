@@ -187,6 +187,58 @@ body {
  min-height: 200px;
 }
 
+/* Disbursements */
+.disbursements {
+ margin-bottom: 40px;
+}
+
+.disbursements h2 {
+ margin-bottom: 20px;
+ color: var(--text-color);
+}
+
+.disbursements-list {
+ background: var(--card-bg);
+ border-radius: 8px;
+ box-shadow: var(--shadow);
+ padding: 20px;
+ min-height: 200px;
+}
+
+.disbursement-item {
+ padding: 15px;
+ border-bottom: 1px solid var(--border-color);
+ display: flex;
+ justify-content: space-between;
+ align-items: center;
+}
+
+.disbursement-item:last-child {
+ border-bottom: none;
+}
+
+.disbursement-info {
+ flex: 1;
+}
+
+.disbursement-description {
+ font-weight: 600;
+ color: var(--text-color);
+ margin-bottom: 5px;
+}
+
+.disbursement-amount {
+ font-size: 1.2rem;
+ font-weight: bold;
+ color: var(--primary-color);
+}
+
+.disbursement-date {
+ font-size: 0.85rem;
+ color: var(--text-light);
+ margin-top: 5px;
+}
+
 .donation-item {
  padding: 15px;
  border-bottom: 1px solid var(--border-color);
@@ -443,6 +495,15 @@ body {
  }
 
  .donation-amount {
+  margin-top: 10px;
+ }
+
+ .disbursement-item {
+  flex-direction: column;
+  align-items: flex-start;
+ }
+
+ .disbursement-amount {
   margin-top: 10px;
  }
 
