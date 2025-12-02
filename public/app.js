@@ -7,7 +7,7 @@ function formatCurrency(amount) {
  }).format(amount);
 }
 
-// Format date
+// Format date in WIB (UTC+7)
 function formatDate(dateString) {
  const date = new Date(dateString);
  return new Intl.DateTimeFormat("id-ID", {
@@ -16,6 +16,8 @@ function formatDate(dateString) {
   day: "numeric",
   hour: "2-digit",
   minute: "2-digit",
+  timeZone: "Asia/Jakarta",
+  timeZoneName: "short",
  }).format(date);
 }
 
