@@ -234,6 +234,59 @@ body {
  padding: 40px;
 }
 
+/* Pagination */
+#pagination-controls {
+ margin-top: 20px;
+ display: flex;
+ justify-content: center;
+}
+
+.pagination {
+ display: flex;
+ align-items: center;
+ gap: 8px;
+ flex-wrap: wrap;
+ justify-content: center;
+}
+
+.pagination-btn {
+ padding: 8px 16px;
+ background: var(--card-bg);
+ border: 1px solid var(--border-color);
+ border-radius: 6px;
+ color: var(--text-color);
+ font-size: 0.9rem;
+ font-weight: 500;
+ cursor: pointer;
+ transition: all 0.3s;
+ font-family: inherit;
+}
+
+.pagination-btn:hover:not(.disabled):not(.active) {
+ background: var(--primary-color);
+ color: white;
+ border-color: var(--primary-color);
+}
+
+.pagination-btn.active {
+ background: var(--primary-color);
+ color: white;
+ border-color: var(--primary-color);
+ font-weight: 600;
+}
+
+.pagination-btn.disabled {
+ opacity: 0.5;
+ cursor: not-allowed;
+ background: var(--bg-color);
+}
+
+.pagination-ellipsis {
+ padding: 8px 4px;
+ color: var(--text-light);
+ font-size: 0.9rem;
+}
+
 /* Donation Form */
 .donation-form-section {
  background: var(--card-bg);
@@ -391,5 +444,14 @@ body {
 
  .donation-amount {
   margin-top: 10px;
+ }
+
+ .pagination {
+  gap: 4px;
+ }
+
+ .pagination-btn {
+  padding: 6px 12px;
+  font-size: 0.85rem;
  }
 }

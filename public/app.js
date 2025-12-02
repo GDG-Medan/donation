@@ -60,19 +60,29 @@ async function loadStats() {
  }
 }
 
+// Pagination state
+let currentPage = 1;
+const itemsPerPage = 10;
+
 // Load and display recent donations
-async function loadRecentDonations() {
+async function loadRecentDonations(page = 1) {
  const listElement = document.getElementById("donations-list");
+ currentPage = page;
 
  try {
-  const response = await fetch("/api/donations");
+  const response = await fetch(
+   `/api/donations?page=${page}&limit=${itemsPerPage}`
+  );
   if (!response.ok) throw new Error("Failed to load donations");
 
-  const donations = await response.json();
+  const data = await response.json();
+  const donations = data.donations || [];
+  const pagination = data.pagination || {};
 
   if (donations.length === 0) {
    listElement.innerHTML =
     '<p class="empty">Belum ada donasi. Jadilah yang pertama!</p>';
+   updatePaginationControls(pagination);
    return;
   }
 
@@ -96,10 +106,94 @@ async function loadRecentDonations() {
     `
    )
    .join("");
+
+  updatePaginationControls(pagination);
  } catch (error) {
   console.error("Error loading donations:", error);
   listElement.innerHTML = '<p class="empty">Gagal memuat data donasi.</p>';
+  updatePaginationControls({});
  }
+}
+
+// Update pagination controls
+function updatePaginationControls(pagination) {
+ const paginationElement = document.getElementById("pagination-controls");
+
+ if (!paginationElement) return;
+
+ const { page = 1, total_pages = 1, has_next = false, has_prev = false } =
+  pagination;
+
+ if (total_pages <= 1) {
+  paginationElement.innerHTML = "";
+  return;
+ }
+
+ let paginationHTML = '<div class="pagination">';
+
+ // Previous button
+ paginationHTML += `
+    <button 
+      class="pagination-btn ${!has_prev ? "disabled" : ""}" 
+      ${!has_prev ? "disabled" : `onclick="loadRecentDonations(${page - 1})"`}
+    >
+      Sebelumnya
+    </button>
+  `;
+
+ // Page numbers
+ const maxVisiblePages = 5;
+ let startPage = Math.max(1, page - Math.floor(maxVisiblePages / 2));
+ let endPage = Math.min(total_pages, startPage + maxVisiblePages - 1);
+
+ if (endPage - startPage < maxVisiblePages - 1) {
+  startPage = Math.max(1, endPage - maxVisiblePages + 1);
+ }
+
+ if (startPage > 1) {
+  paginationHTML += `
+      <button class="pagination-btn" onclick="loadRecentDonations(1)">1</button>
+    `;
+  if (startPage > 2) {
+   paginationHTML += `<span class="pagination-ellipsis">...</span>`;
+  }
+ }
+
+ for (let i = startPage; i <= endPage; i++) {
+  paginationHTML += `
+      <button 
+        class="pagination-btn ${i === page ? "active" : ""}" 
+        onclick="loadRecentDonations(${i})"
+      >
+        ${i}
+      </button>
+    `;
+ }
+
+ if (endPage < total_pages) {
+  if (endPage < total_pages - 1) {
+   paginationHTML += `<span class="pagination-ellipsis">...</span>`;
+  }
+  paginationHTML += `
+      <button class="pagination-btn" onclick="loadRecentDonations(${total_pages})">
+        ${total_pages}
+      </button>
+    `;
+ }
+
+ // Next button
+ paginationHTML += `
+    <button 
+      class="pagination-btn ${!has_next ? "disabled" : ""}" 
+      ${!has_next ? "disabled" : `onclick="loadRecentDonations(${page + 1})"`}
+    >
+      Selanjutnya
+    </button>
+  `;
+
+ paginationHTML += "</div>";
+
+ paginationElement.innerHTML = paginationHTML;
 }
 
 // Calculate fee (0.7%)
@@ -214,7 +308,7 @@ document.addEventListener("DOMContentLoaded", () => {
  // Refresh stats and donations every 30 seconds
  setInterval(() => {
   loadStats();
-  loadRecentDonations();
+  loadRecentDonations(currentPage);
  }, 30000);
 
  // Handle form submission

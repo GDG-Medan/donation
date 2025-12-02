@@ -25,7 +25,7 @@ export async function onRequest(context) {
 
   // Recent donations endpoint
   if (path === "/api/donations" && method === "GET") {
-   return handleGetDonations(env);
+   return handleGetDonations(request, env);
   }
 
   // Create donation endpoint
@@ -105,18 +105,34 @@ async function handleStats(env) {
 }
 
 // Get recent donations
-async function handleGetDonations(env) {
+async function handleGetDonations(request, env) {
  const db = env.DB;
+ const url = new URL(request.url);
+ 
+ // Get pagination parameters
+ const page = parseInt(url.searchParams.get("page")) || 1;
+ const limit = parseInt(url.searchParams.get("limit")) || 10;
+ const offset = (page - 1) * limit;
 
+ // Get total count for pagination
+ const countResult = await db
+  .prepare("SELECT COUNT(*) as total FROM donations WHERE status = ?")
+  .bind("success")
+  .first();
+
+ const totalCount = countResult?.total || 0;
+ const totalPages = Math.ceil(totalCount / limit);
+
+ // Get paginated donations
  const donations = await db
   .prepare(
    `SELECT name, email, phone, amount, message, anonymous, created_at 
       FROM donations 
       WHERE status = ? 
       ORDER BY created_at DESC 
-      LIMIT 20`
+      LIMIT ? OFFSET ?`
   )
-  .bind("success")
+  .bind("success", limit, offset)
   .all();
 
  // Hide sensitive user data
@@ -144,12 +160,25 @@ async function handleGetDonations(env) {
   return sanitized;
  });
 
- return new Response(JSON.stringify(sanitizedDonations), {
-  headers: {
-   "Content-Type": "application/json",
-   "Access-Control-Allow-Origin": "*",
-  },
- });
+ return new Response(
+  JSON.stringify({
+   donations: sanitizedDonations,
+   pagination: {
+    page: page,
+    limit: limit,
+    total_count: totalCount,
+    total_pages: totalPages,
+    has_next: page < totalPages,
+    has_prev: page > 1,
+   },
+  }),
+  {
+   headers: {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+   },
+  }
+ );
 }
 
 // Create donation and initiate Midtrans payment
