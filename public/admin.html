@@ -391,15 +391,18 @@
    let adminToken = localStorage.getItem("admin_token");
    let tokenExpiry = localStorage.getItem("admin_token_expiry");
 
-   // Check if token is valid
-   if (adminToken && tokenExpiry && new Date(tokenExpiry) > new Date()) {
-    await initGrafanaLogger();
-    showDashboard();
-   } else {
-    showLogin();
-    localStorage.removeItem("admin_token");
-    localStorage.removeItem("admin_token_expiry");
-   }
+   // Initialize on page load (async IIFE)
+   (async () => {
+    // Check if token is valid
+    if (adminToken && tokenExpiry && new Date(tokenExpiry) > new Date()) {
+     await initGrafanaLogger();
+     showDashboard();
+    } else {
+     showLogin();
+     localStorage.removeItem("admin_token");
+     localStorage.removeItem("admin_token_expiry");
+    }
+   })();
 
    function showLogin() {
     document.getElementById("login-section").style.display = "block";
