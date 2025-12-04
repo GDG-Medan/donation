@@ -190,29 +190,34 @@ async function loadDisbursements(page = 1) {
                   )}</div>
                   <div class="activity-description">${activity.description}</div>
                   ${
-                   activity.file_url
+                   (activity.files && activity.files.length > 0)
                     ? `
-                    <div class="activity-file">
-                      <a 
-                        href="${activity.file_url}" 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        class="activity-file-link"
-                      >
-                        <span>📎</span>
-                        <span>${activity.file_name || "Lihat File"}</span>
-                      </a>
-                      ${
-                       activity.file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
-                        ? `<div class="activity-image"><img src="${
-                           activity.file_url
-                          }" alt="${
-                           activity.file_name || "Activity image"
-                          }" loading="lazy" /></div>`
-                        : activity.file_url.match(/\.(mp4|mov)$/i)
-                        ? `<div class="activity-video"><video src="${activity.file_url}" controls /></div>`
-                        : ""
-                      }
+                    <div class="activity-gallery">
+                      <div class="activity-gallery-grid">
+                        ${activity.files.map((file) => {
+                         const isImage = file.file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+                         const isVideo = file.file_url.match(/\.(mp4|mov)$/i);
+                         
+                         return `
+                          <div class="activity-gallery-item">
+                            ${
+                             isImage
+                              ? `<a href="${file.file_url}" target="_blank" rel="noopener noreferrer" class="activity-gallery-link">
+                                   <img src="${file.file_url}" alt="${file.file_name || "Image"}" loading="lazy" />
+                                 </a>`
+                              : isVideo
+                              ? `<div class="activity-gallery-video">
+                                   <video src="${file.file_url}" controls preload="metadata"></video>
+                                 </div>`
+                              : `<a href="${file.file_url}" target="_blank" rel="noopener noreferrer" class="activity-gallery-link activity-gallery-document">
+                                   <div class="activity-gallery-document-icon">📄</div>
+                                   <div class="activity-gallery-document-name">${file.file_name || "File"}</div>
+                                 </a>`
+                            }
+                          </div>
+                         `;
+                        }).join("")}
+                      </div>
                     </div>
                   `
                     : ""

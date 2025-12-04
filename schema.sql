@@ -40,6 +40,17 @@ CREATE TABLE IF NOT EXISTS disbursement_activities (
   FOREIGN KEY (disbursement_id) REFERENCES disbursements(id) ON DELETE CASCADE
 );
 
+-- Activity files table (multiple files per activity)
+CREATE TABLE IF NOT EXISTS activity_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  activity_id INTEGER NOT NULL,
+  file_url TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  file_type TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (activity_id) REFERENCES disbursement_activities(id) ON DELETE CASCADE
+);
+
 -- Indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_donations_status ON donations(status);
 CREATE INDEX IF NOT EXISTS idx_donations_created_at ON donations(created_at);
@@ -47,4 +58,5 @@ CREATE INDEX IF NOT EXISTS idx_admin_sessions_token ON admin_sessions(token);
 CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_disbursement_activities_disbursement_id ON disbursement_activities(disbursement_id);
 CREATE INDEX IF NOT EXISTS idx_disbursement_activities_activity_time ON disbursement_activities(activity_time);
+CREATE INDEX IF NOT EXISTS idx_activity_files_activity_id ON activity_files(activity_id);
 

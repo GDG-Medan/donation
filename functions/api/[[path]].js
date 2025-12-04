@@ -472,9 +472,29 @@ async function handleGetDisbursementsPublic(request, env) {
     .bind(disbursement.id)
     .all();
 
+   // Get files for each activity
+   const activitiesWithFiles = await Promise.all(
+    (activities.results || []).map(async (activity) => {
+     const files = await db
+      .prepare(
+       `SELECT id, file_url, file_name, file_type, created_at 
+          FROM activity_files 
+          WHERE activity_id = ? 
+          ORDER BY created_at ASC`
+      )
+      .bind(activity.id)
+      .all();
+
+     return {
+      ...activity,
+      files: files.results || [],
+     };
+    })
+   );
+
    return {
     ...disbursement,
-    activities: activities.results || [],
+    activities: activitiesWithFiles,
    };
   })
  );
@@ -532,9 +552,29 @@ async function handleGetDisbursements(request, env) {
     .bind(disbursement.id)
     .all();
 
+   // Get files for each activity
+   const activitiesWithFiles = await Promise.all(
+    (activities.results || []).map(async (activity) => {
+     const files = await db
+      .prepare(
+       `SELECT id, file_url, file_name, file_type, created_at 
+          FROM activity_files 
+          WHERE activity_id = ? 
+          ORDER BY created_at ASC`
+      )
+      .bind(activity.id)
+      .all();
+
+     return {
+      ...activity,
+      files: files.results || [],
+     };
+    })
+   );
+
    return {
     ...disbursement,
-    activities: activities.results || [],
+    activities: activitiesWithFiles,
    };
   })
  );
@@ -628,7 +668,27 @@ async function handleGetDisbursementActivities(disbursementId, request, env) {
   .bind(disbursementId)
   .all();
 
- return new Response(JSON.stringify(activities.results || []), {
+ // Get files for each activity
+ const activitiesWithFiles = await Promise.all(
+  (activities.results || []).map(async (activity) => {
+   const files = await db
+    .prepare(
+     `SELECT id, file_url, file_name, file_type, created_at 
+        FROM activity_files 
+        WHERE activity_id = ? 
+        ORDER BY created_at ASC`
+    )
+    .bind(activity.id)
+    .all();
+
+   return {
+    ...activity,
+    files: files.results || [],
+   };
+  })
+ );
+
+ return new Response(JSON.stringify(activitiesWithFiles), {
   headers: {
    "Content-Type": "application/json",
    "Access-Control-Allow-Origin": "*",
@@ -667,8 +727,7 @@ async function handleCreateDisbursementActivity(disbursementId, request, env) {
   });
  }
 
- const { activity_time, description, file_url, file_name } =
-  await request.json();
+ const { activity_time, description, files } = await request.json();
 
  if (!activity_time || !description) {
   return new Response(
@@ -686,20 +745,36 @@ async function handleCreateDisbursementActivity(disbursementId, request, env) {
   );
  }
 
- await db
+ // Create activity (without file_url and file_name for backward compatibility)
+ const result = await db
   .prepare(
-   "INSERT INTO disbursement_activities (disbursement_id, activity_time, description, file_url, file_name) VALUES (?, ?, ?, ?, ?)"
+   "INSERT INTO disbursement_activities (disbursement_id, activity_time, description) VALUES (?, ?, ?)"
   )
-  .bind(
-   disbursementId,
-   activity_time,
-   description,
-   file_url || null,
-   file_name || null
-  )
+  .bind(disbursementId, activity_time, description)
   .run();
 
- return new Response(JSON.stringify({ success: true }), {
+ const activityId = result.meta.last_row_id;
+
+ // Insert files if provided
+ if (files && Array.isArray(files) && files.length > 0) {
+  for (const file of files) {
+   if (file.file_url && file.file_name) {
+    await db
+     .prepare(
+      "INSERT INTO activity_files (activity_id, file_url, file_name, file_type) VALUES (?, ?, ?, ?)"
+     )
+     .bind(
+      activityId,
+      file.file_url,
+      file.file_name,
+      file.file_type || null
+     )
+     .run();
+   }
+  }
+ }
+
+ return new Response(JSON.stringify({ success: true, activity_id: activityId }), {
   headers: {
    "Content-Type": "application/json",
    "Access-Control-Allow-Origin": "*",
@@ -816,20 +891,8 @@ async function handleFileUpload(request, env) {
   // For R2 public buckets, URL format is: https://<account-id>.r2.cloudflarestorage.com/<bucket-name>/<object-key>
   // Or if using custom domain: https://<custom-domain>/<object-key>
 
-  const customDomain = env.R2_PUBLIC_DOMAIN;
-  let fileUrl;
-
-  if (customDomain) {
-   // Use custom domain if configured
-   fileUrl = `https://${customDomain}/${fileName}`;
-  } else {
-   // For R2 public bucket, construct URL
-   // Note: You need to make your R2 bucket public and configure CORS
-   // The URL format depends on your R2 setup
-   // For now, we'll store the file key and construct URL on frontend
-   // You can also use: `https://<your-account-id>.r2.cloudflarestorage.com/activity-files/${fileName}`
-   fileUrl = fileName; // Store key, will be handled by frontend or you can set R2_PUBLIC_DOMAIN env var
-  }
+  const customDomain = env.R2_PUBLIC_DOMAIN || "files-donasi.gdgmedan.com";
+  const fileUrl = `https://${customDomain}/${fileName}`;
 
   return new Response(
    JSON.stringify({

@@ -309,7 +309,11 @@
 
     return activities
      .map(
-      (activity) => `
+      (activity) => {
+       const files = activity.files || [];
+       const hasFiles = files.length > 0;
+       
+       return `
         <div class="activity-item">
           <div style="flex: 1;">
             <div class="activity-time">${formatDate(
@@ -317,34 +321,40 @@
             )}</div>
             <div class="activity-description">${activity.description}</div>
             ${
-             activity.file_url
+             hasFiles
               ? `
               <div style="margin-top: 10px;">
-                <a 
-                  href="${activity.file_url}" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  style="display: inline-flex; align-items: center; gap: 5px; color: var(--primary-color); text-decoration: none; font-size: 0.9rem;"
-                >
-                  <span>📎</span>
-                  <span>${activity.file_name || "Lihat File"}</span>
-                </a>
-                ${
-                 activity.file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
-                  ? `<div style="margin-top: 8px;"><img src="${
-                     activity.file_url
-                    }" alt="${
-                     activity.file_name || "Activity image"
-                    }" style="max-width: 100%; max-height: 200px; border-radius: 4px; border: 1px solid var(--border-color);" /></div>`
-                  : ""
-                }
+                <div style="font-weight: 600; margin-bottom: 8px; color: var(--text-color); font-size: 0.9rem;">File (${files.length}):</div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px;">
+                  ${files.map((file) => {
+                   const isImage = file.file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+                   const isVideo = file.file_url.match(/\.(mp4|mov)$/i);
+                   
+                   return `
+                    <div style="border: 1px solid var(--border-color); border-radius: 4px; overflow: hidden;">
+                      ${isImage 
+                        ? `<img src="${file.file_url}" alt="${file.file_name || "Image"}" style="width: 100%; height: 150px; object-fit: cover; display: block;" />`
+                        : isVideo
+                        ? `<video src="${file.file_url}" style="width: 100%; height: 150px; object-fit: cover; display: block;" muted></video>`
+                        : `<div style="width: 100%; height: 150px; display: flex; align-items: center; justify-content: center; background: var(--bg-color);">
+                             <span style="font-size: 2rem;">📄</span>
+                           </div>`
+                      }
+                      <div style="padding: 8px; font-size: 0.8rem; color: var(--text-light); text-overflow: ellipsis; overflow: hidden; white-space: nowrap;" title="${file.file_name || "File"}">
+                        ${file.file_name || "File"}
+                      </div>
+                    </div>
+                   `;
+                  }).join("")}
+                </div>
               </div>
             `
               : ""
             }
           </div>
         </div>
-      `
+      `;
+      }
      )
      .join("");
    }
@@ -384,43 +394,51 @@
     submitBtn.disabled = true;
     submitBtn.textContent = "Memproses...";
 
-    let fileUrl = null;
-    let fileName = null;
+    const uploadedFiles = [];
 
     try {
-     // Upload file if provided
+     // Upload files if provided
      if (fileInput.files && fileInput.files.length > 0) {
       progressDiv.style.display = "block";
-      const file = fileInput.files[0];
+      progressDiv.innerHTML = `<div style="font-size: 0.85rem; color: var(--primary-color);">Mengupload ${fileInput.files.length} file...</div>`;
 
-      const formData = new FormData();
-      formData.append("file", file);
+      // Upload all files
+      for (let i = 0; i < fileInput.files.length; i++) {
+       const file = fileInput.files[i];
+       progressDiv.innerHTML = `<div style="font-size: 0.85rem; color: var(--primary-color);">Mengupload file ${i + 1} dari ${fileInput.files.length}...</div>`;
 
-      const uploadResponse = await fetch("/api/admin/upload", {
-       method: "POST",
-       headers: {
-        Authorization: `Bearer ${adminToken}`,
-       },
-       body: formData,
-      });
+       const formData = new FormData();
+       formData.append("file", file);
 
-      if (uploadResponse.status === 401) {
-       logout();
-       return;
+       const uploadResponse = await fetch("/api/admin/upload", {
+        method: "POST",
+        headers: {
+         Authorization: `Bearer ${adminToken}`,
+        },
+        body: formData,
+       });
+
+       if (uploadResponse.status === 401) {
+        logout();
+        return;
+       }
+
+       if (!uploadResponse.ok) {
+        const error = await uploadResponse.json();
+        throw new Error(error.error || `File upload failed: ${file.name}`);
+       }
+
+       const uploadData = await uploadResponse.json();
+       uploadedFiles.push({
+        file_url: uploadData.file_url,
+        file_name: uploadData.file_name,
+        file_type: uploadData.file_type,
+       });
       }
-
-      if (!uploadResponse.ok) {
-       const error = await uploadResponse.json();
-       throw new Error(error.error || "File upload failed");
-      }
-
-      const uploadData = await uploadResponse.json();
-      fileUrl = uploadData.file_url;
-      fileName = uploadData.file_name;
       progressDiv.style.display = "none";
      }
 
-     // Create activity
+     // Create activity with files
      const response = await fetch(
       `/api/admin/disbursements/${disbursementId}/activities`,
       {
@@ -432,8 +450,7 @@
        body: JSON.stringify({
         activity_time: activityTime,
         description: descriptionInput.value,
-        file_url: fileUrl,
-        file_name: fileName,
+        files: uploadedFiles,
        }),
       }
      );
@@ -453,6 +470,8 @@
      descriptionInput.value = "";
      fileInput.value = "";
      progressDiv.style.display = "none";
+     const selectedFilesDiv = document.getElementById(`selected-files-${disbursementId}`);
+     if (selectedFilesDiv) selectedFilesDiv.innerHTML = "";
 
      // Reload disbursements to show new activity
      await loadDisbursements();
@@ -572,19 +591,21 @@
                     ></textarea>
                   </div>
                   <div class="form-group">
-                    <label>Upload File (Opsional)</label>
+                    <label>Upload File (Opsional - Bisa Multiple)</label>
                     <input 
                       type="file" 
                       id="activity-file-${disbursement.id}" 
-                      accept="image/*,application/pdf,video/mp4"
+                      accept="image/*,application/pdf,video/mp4,video/quicktime"
+                      multiple
                       style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px;"
                     />
-                    <small style="color: var(--text-light);">Format: Gambar, PDF, atau Video MP4 (maks. 10MB)</small>
+                    <small style="color: var(--text-light);">Format: Gambar, PDF, atau Video MP4/MOV (maks. 10MB per file)</small>
                     <div id="file-upload-progress-${
                      disbursement.id
                     }" style="display: none; margin-top: 5px;">
                       <div style="font-size: 0.85rem; color: var(--primary-color);">Mengupload file...</div>
                     </div>
+                    <div id="selected-files-${disbursement.id}" style="margin-top: 10px;"></div>
                   </div>
                   <button type="submit" class="submit-btn" style="width: auto;">Tambah Aktivitas</button>
                 </form>
