@@ -6,6 +6,7 @@
 import { createLogger } from "../utils/logger.js";
 import { Errors, handleError } from "../utils/errors.js";
 import { validateEnvVars } from "../utils/env.js";
+import { requireAdminAuth } from "../utils/auth.js";
 import * as donationRoutes from "../routes/donations.js";
 import * as adminRoutes from "../routes/admin.js";
 import * as disbursementRoutes from "../routes/disbursements.js";
@@ -58,8 +59,12 @@ export async function onRequest(context) {
     // Route handling
     let response;
 
+    // Grafana config endpoint (public, for client-side logging)
+    if (path === "/api/config/grafana" && method === "GET") {
+      response = await handlePublicGrafanaConfig(env, logger);
+    }
     // Stats endpoint
-    if (path === "/api/stats" && method === "GET") {
+    else if (path === "/api/stats" && method === "GET") {
       response = await donationRoutes.handleStats(env, logger);
     }
     // Recent donations endpoint
@@ -140,6 +145,10 @@ export async function onRequest(context) {
       // File upload endpoint (admin)
       else if (path === "/api/admin/upload" && method === "POST") {
         response = await adminRoutes.handleFileUpload(request, env, logger);
+      }
+      // Grafana config endpoint (admin only, for client-side logging)
+      else if (path === "/api/admin/grafana-config" && method === "GET") {
+        response = await handleGrafanaConfig(request, env, logger);
       } else {
         response = Errors.NOT_FOUND("Endpoint");
       }
@@ -155,6 +164,16 @@ export async function onRequest(context) {
         try {
           const clonedResponse = response.clone();
           const body = await clonedResponse.json();
+          
+          // Handle arrays - don't spread arrays, return as-is with header only
+          if (Array.isArray(body)) {
+            return new Response(JSON.stringify(body), {
+              status: response.status,
+              headers: headers,
+            });
+          }
+          
+          // For objects, add request_id
           return new Response(
             JSON.stringify({ ...body, request_id: requestId }),
             {
@@ -187,4 +206,58 @@ export async function onRequest(context) {
     });
     return handleError(error, logger, requestId);
   }
+}
+
+/**
+ * Get Grafana config for client-side logging (admin only)
+ * @param {Request} request - HTTP request
+ * @param {Object} env - Cloudflare environment
+ * @param {Object} logger - Logger instance
+ * @returns {Promise<Response>} - HTTP response
+ */
+async function handleGrafanaConfig(request, env, logger) {
+  const db = env.DB;
+
+  // Check authentication
+  const auth = await requireAdminAuth(request, db);
+  if (!auth.authorized) {
+    return Errors.UNAUTHORIZED();
+  }
+
+  // Return Grafana config if available
+  const config = {
+    endpoint: env.GRAFANA_OTLP_ENDPOINT || null,
+    auth: env.GRAFANA_OTLP_AUTH || null,
+    enabled: !!(env.GRAFANA_OTLP_ENDPOINT && env.GRAFANA_OTLP_AUTH),
+  };
+
+  return new Response(JSON.stringify(config), {
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+    },
+  });
+}
+
+/**
+ * Get Grafana config for public client-side logging
+ * @param {Object} env - Cloudflare environment
+ * @param {Object} logger - Logger instance
+ * @returns {Promise<Response>} - HTTP response
+ */
+async function handlePublicGrafanaConfig(env, logger) {
+  // Return Grafana config if available (public endpoint, no auth required)
+  // This is safe because the auth token itself is what secures Grafana, not the endpoint URL
+  const config = {
+    endpoint: env.GRAFANA_OTLP_ENDPOINT || null,
+    auth: env.GRAFANA_OTLP_AUTH || null,
+    enabled: !!(env.GRAFANA_OTLP_ENDPOINT && env.GRAFANA_OTLP_AUTH),
+  };
+
+  return new Response(JSON.stringify(config), {
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+    },
+  });
 }

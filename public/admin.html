@@ -6,6 +6,14 @@
   <title>Admin - GDG Donation</title>
   <link rel="icon" type="image/x-icon" href="/favicon.ico" />
   <link rel="stylesheet" href="/styles.css" />
+  <script>
+   // Grafana configuration (should be set via environment or config endpoint)
+   // For security, consider using a backend proxy endpoint instead
+   window.GRAFANA_CONFIG = {
+    endpoint: null, // Will be set from environment if available
+    auth: null, // Will be set from environment if available
+   };
+  </script>
   <style>
    .admin-container {
     max-width: 1000px;
@@ -203,11 +211,189 @@
   </div>
 
   <script>
+   // Grafana.net Logging Utility (Client-side)
+   const GrafanaLogger = {
+    endpoint: null,
+    auth: null,
+    serviceName: "gdg-donation-admin",
+    enabled: false,
+
+    async init() {
+     // Get credentials from secure API endpoint (admin only)
+     try {
+      const response = await fetch("/api/admin/grafana-config", {
+       headers: {
+        Authorization: `Bearer ${adminToken || ""}`,
+       },
+      });
+
+      if (response.ok) {
+       const config = await response.json();
+       if (config.enabled) {
+        this.endpoint = config.endpoint;
+        this.auth = config.auth;
+        this.enabled = true;
+       }
+      }
+     } catch (error) {
+      // Silently fail - logging is optional
+      console.debug("Grafana config not available:", error);
+     }
+    },
+
+    getSeverityNumber(level) {
+     const severityMap = {
+      debug: 5,
+      info: 9,
+      warn: 13,
+      error: 17,
+      fatal: 21,
+     };
+     return severityMap[level.toLowerCase()] || 9;
+    },
+
+    async sendLog(level, message, context = {}, error = null) {
+     if (!this.enabled) {
+      // Fallback to console if Grafana is not configured
+      const consoleMethod = level === "error" ? "error" : level === "warn" ? "warn" : "log";
+      console[consoleMethod](`[${level.toUpperCase()}] ${message}`, context, error);
+      return;
+     }
+
+     try {
+      const timestamp = Date.now() * 1000000; // Convert to nanoseconds
+
+      const logRecord = {
+       timeUnixNano: timestamp.toString(),
+       severityNumber: this.getSeverityNumber(level),
+       severityText: level.toUpperCase(),
+       body: {
+        stringValue: message,
+       },
+       attributes: [
+        {
+         key: "log.level",
+         value: { stringValue: level },
+        },
+        {
+         key: "service.name",
+         value: { stringValue: this.serviceName },
+        },
+        {
+         key: "environment",
+         value: { stringValue: "production" },
+        },
+        {
+         key: "source",
+         value: { stringValue: "admin-frontend" },
+        },
+       ],
+      };
+
+      // Add error details if present
+      if (error) {
+       logRecord.attributes.push(
+        {
+         key: "error.type",
+         value: { stringValue: error.name || "Error" },
+        },
+        {
+         key: "error.message",
+         value: { stringValue: error.message || "" },
+        },
+        {
+         key: "error.stack",
+         value: { stringValue: error.stack || "" },
+        }
+       );
+      }
+
+      // Add custom context attributes
+      Object.entries(context).forEach(([key, value]) => {
+       logRecord.attributes.push({
+        key: `context.${key}`,
+        value: {
+         stringValue: typeof value === "object" ? JSON.stringify(value) : String(value),
+        },
+       });
+      });
+
+      const payload = {
+       resourceLogs: [
+        {
+         resource: {
+          attributes: [
+           {
+            key: "service.name",
+            value: { stringValue: this.serviceName },
+           },
+           {
+            key: "service.version",
+            value: { stringValue: "1.0.0" },
+           },
+          ],
+         },
+         scopeLogs: [
+          {
+           logRecords: [logRecord],
+          },
+         ],
+        },
+       ],
+      };
+
+      // Send to Grafana.net (fire and forget)
+      fetch(this.endpoint, {
+       method: "POST",
+       headers: {
+        "Content-Type": "application/json",
+        Authorization: `Basic ${this.auth}`,
+       },
+       body: JSON.stringify(payload),
+      }).catch((err) => {
+       // Silently fail - we don't want logging failures to break the app
+       console.error("Failed to send log to Grafana:", err);
+      });
+     } catch (err) {
+      // Silently fail
+      console.error("Error in Grafana logger:", err);
+     }
+    },
+
+    async debug(message, context) {
+     await this.sendLog("debug", message, context);
+    },
+
+    async info(message, context) {
+     await this.sendLog("info", message, context);
+    },
+
+    async warn(message, context) {
+     await this.sendLog("warn", message, context);
+    },
+
+    async error(message, error, context) {
+     await this.sendLog("error", message, context, error);
+    },
+
+    async fatal(message, error, context) {
+     await this.sendLog("fatal", message, context, error);
+    },
+   };
+
+   // Initialize logger (will be called after token is available)
+   async function initGrafanaLogger() {
+    if (adminToken) {
+     await GrafanaLogger.init();
+    }
+   }
+
    let adminToken = localStorage.getItem("admin_token");
    let tokenExpiry = localStorage.getItem("admin_token_expiry");
 
    // Check if token is valid
    if (adminToken && tokenExpiry && new Date(tokenExpiry) > new Date()) {
+    await initGrafanaLogger();
     showDashboard();
    } else {
     showLogin();
@@ -226,7 +412,8 @@
     loadAdminData();
    }
 
-   function logout() {
+   async function logout() {
+    await GrafanaLogger.info("Admin logout");
     localStorage.removeItem("admin_token");
     localStorage.removeItem("admin_token_expiry");
     adminToken = null;
@@ -475,14 +662,18 @@
 
      // Reload disbursements to show new activity
      await loadDisbursements();
-    } catch (error) {
-     alert("Terjadi kesalahan: " + error.message);
-     progressDiv.style.display = "none";
-    } finally {
-     submitBtn.disabled = false;
-     submitBtn.textContent = originalText;
+     } catch (error) {
+      await GrafanaLogger.error("Failed to add activity", error, {
+       disbursementId,
+       hasFiles: fileInput.files?.length > 0,
+      });
+      alert("Terjadi kesalahan: " + error.message);
+      progressDiv.style.display = "none";
+     } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalText;
+     }
     }
-   }
 
    // Load admin data
    async function loadAdminData() {
@@ -497,19 +688,25 @@
      if (!response.ok) throw new Error("Failed to load stats");
 
      const data = await response.json();
-     const balance = data.totalRaised - data.totalDisbursed;
+     await GrafanaLogger.info("Stats loaded", {
+      totalRaised: data.total_raised,
+      totalDisbursed: data.total_disbursed,
+      donorCount: data.donor_count,
+     });
+     const balance = data.total_raised - data.total_disbursed;
 
      document.getElementById("admin-total-raised").textContent = formatCurrency(
-      data.totalRaised || 0
+      data.total_raised || 0
      );
      document.getElementById("admin-total-disbursed").textContent =
-      formatCurrency(data.totalDisbursed || 0);
+      formatCurrency(data.total_disbursed || 0);
      document.getElementById("admin-donor-count").textContent =
-      data.donorCount || 0;
+      data.donor_count || 0;
      document.getElementById("admin-balance").textContent = formatCurrency(
       balance || 0
      );
     } catch (error) {
+     await GrafanaLogger.error("Failed to load stats", error);
      console.error("Error loading stats:", error);
     }
    }
@@ -533,6 +730,22 @@
      if (!response.ok) throw new Error("Failed to load disbursements");
 
      const disbursements = await response.json();
+
+     // Ensure disbursements is an array
+     if (!Array.isArray(disbursements)) {
+      await GrafanaLogger.error("Invalid disbursements response format", null, {
+       responseType: typeof disbursements,
+       response: JSON.stringify(disbursements).substring(0, 200),
+      });
+      console.error("Invalid response format:", disbursements);
+      listElement.innerHTML =
+       '<p class="empty">Format data tidak valid. Silakan refresh halaman.</p>';
+      return;
+     }
+
+     await GrafanaLogger.info("Disbursements loaded", {
+      count: disbursements.length,
+     });
 
      if (disbursements.length === 0) {
       listElement.innerHTML = '<p class="empty">Belum ada pencairan.</p>';
@@ -619,6 +832,7 @@
       )
       .join("");
     } catch (error) {
+     await GrafanaLogger.error("Failed to load disbursements", error);
      console.error("Error loading disbursements:", error);
      listElement.innerHTML =
       '<p class="empty">Gagal memuat data pencairan.</p>';
@@ -652,8 +866,13 @@
       localStorage.setItem("admin_token", data.token);
       localStorage.setItem("admin_token_expiry", data.expires_at);
 
+      await initGrafanaLogger();
+      await GrafanaLogger.info("Admin login successful");
       showDashboard();
      } catch (error) {
+      await GrafanaLogger.warn("Admin login failed", {
+       reason: error.message || "Login failed",
+      });
       errorDiv.textContent = error.message;
       errorDiv.style.display = "block";
      }
@@ -696,10 +915,19 @@
        throw new Error(error.error || "Failed to create disbursement");
       }
 
+      await GrafanaLogger.info("Disbursement created", {
+       amount: data.amount,
+       descriptionLength: data.description?.length || 0,
+      });
+
       // Reset form
       e.target.reset();
       await loadAdminData();
      } catch (error) {
+      await GrafanaLogger.error("Failed to create disbursement", error, {
+       amount: amountInput.value,
+       hasDescription: !!descriptionInput.value,
+      });
       alert("Terjadi kesalahan: " + error.message);
      } finally {
       submitBtn.disabled = false;

@@ -6,6 +6,174 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// Grafana.net Logging Utility (Client-side)
+const GrafanaLogger = {
+ endpoint: null,
+ auth: null,
+ serviceName: "gdg-donation-frontend",
+ enabled: false,
+
+ async init() {
+  // Get credentials from public config endpoint
+  try {
+   const response = await fetch("/api/config/grafana");
+
+   if (response.ok) {
+    const config = await response.json();
+    if (config.enabled) {
+     this.endpoint = config.endpoint;
+     this.auth = config.auth;
+     this.enabled = true;
+    }
+   }
+  } catch (error) {
+   // Silently fail - logging is optional
+   console.debug("Grafana config not available:", error);
+  }
+ },
+
+ getSeverityNumber(level) {
+  const severityMap = {
+   debug: 5,
+   info: 9,
+   warn: 13,
+   error: 17,
+   fatal: 21,
+  };
+  return severityMap[level.toLowerCase()] || 9;
+ },
+
+ async sendLog(level, message, context = {}, error = null) {
+  if (!this.enabled) {
+   // Fallback to console if Grafana is not configured
+   const consoleMethod =
+    level === "error" ? "error" : level === "warn" ? "warn" : "log";
+   console[consoleMethod](`[${level.toUpperCase()}] ${message}`, context, error);
+   return;
+  }
+
+  try {
+   const timestamp = Date.now() * 1000000; // Convert to nanoseconds
+
+   const logRecord = {
+    timeUnixNano: timestamp.toString(),
+    severityNumber: this.getSeverityNumber(level),
+    severityText: level.toUpperCase(),
+    body: {
+     stringValue: message,
+    },
+    attributes: [
+     {
+      key: "log.level",
+      value: { stringValue: level },
+     },
+     {
+      key: "service.name",
+      value: { stringValue: this.serviceName },
+     },
+     {
+      key: "environment",
+      value: { stringValue: "production" },
+     },
+     {
+      key: "source",
+      value: { stringValue: "public-frontend" },
+     },
+    ],
+   };
+
+   // Add error details if present
+   if (error) {
+    logRecord.attributes.push(
+     {
+      key: "error.type",
+      value: { stringValue: error.name || "Error" },
+     },
+     {
+      key: "error.message",
+      value: { stringValue: error.message || "" },
+     },
+     {
+      key: "error.stack",
+      value: { stringValue: error.stack || "" },
+     }
+    );
+   }
+
+   // Add custom context attributes
+   Object.entries(context).forEach(([key, value]) => {
+    logRecord.attributes.push({
+     key: `context.${key}`,
+     value: {
+      stringValue:
+       typeof value === "object" ? JSON.stringify(value) : String(value),
+     },
+    });
+   });
+
+   const payload = {
+    resourceLogs: [
+     {
+      resource: {
+       attributes: [
+        {
+         key: "service.name",
+         value: { stringValue: this.serviceName },
+        },
+        {
+         key: "service.version",
+         value: { stringValue: "1.0.0" },
+        },
+       ],
+      },
+      scopeLogs: [
+       {
+        logRecords: [logRecord],
+       },
+      ],
+     },
+    ],
+   };
+
+   // Send to Grafana.net (fire and forget)
+   fetch(this.endpoint, {
+    method: "POST",
+    headers: {
+     "Content-Type": "application/json",
+     Authorization: `Basic ${this.auth}`,
+    },
+    body: JSON.stringify(payload),
+   }).catch((err) => {
+    // Silently fail - we don't want logging failures to break the app
+    console.error("Failed to send log to Grafana:", err);
+   });
+  } catch (err) {
+   // Silently fail
+   console.error("Error in Grafana logger:", err);
+  }
+ },
+
+ async debug(message, context) {
+  await this.sendLog("debug", message, context);
+ },
+
+ async info(message, context) {
+  await this.sendLog("info", message, context);
+ },
+
+ async warn(message, context) {
+  await this.sendLog("warn", message, context);
+ },
+
+ async error(message, error, context) {
+  await this.sendLog("error", message, context, error);
+ },
+
+ async fatal(message, error, context) {
+  await this.sendLog("fatal", message, context, error);
+ },
+};
+
 // Email validation function (matches backend validation)
 function isValidEmail(email) {
   if (!email || typeof email !== "string") {
@@ -283,16 +451,24 @@ async function loadStats() {
   const progressRemaining = document.getElementById("progress-remaining");
 
   if (progressBar) {
-    progressBar.style.width = `${progressPercentage}%`;
+   progressBar.style.width = `${progressPercentage}%`;
   }
   if (progressRaised) {
-    progressRaised.textContent = formatCurrency(totalRaised);
+   progressRaised.textContent = formatCurrency(totalRaised);
   }
   if (progressRemaining) {
-    const remaining = Math.max(goal - totalRaised, 0);
-    progressRemaining.textContent = `${formatCurrency(remaining)} tersisa`;
+   const remaining = Math.max(goal - totalRaised, 0);
+   progressRemaining.textContent = `${formatCurrency(remaining)} tersisa`;
   }
+
+  await GrafanaLogger.info("Stats loaded", {
+   totalRaised,
+   totalDisbursed,
+   donorCount,
+   progressPercentage: progressPercentage.toFixed(2),
+  });
  } catch (error) {
+  await GrafanaLogger.error("Failed to load stats", error);
   console.error("Error loading stats:", error);
   showToast("Gagal memuat statistik", "error");
  }
@@ -328,6 +504,13 @@ async function loadRecentDonations(page = 1) {
    return;
   }
 
+  await GrafanaLogger.info("Donations loaded", {
+   page,
+   limit: itemsPerPage,
+   count: donations.length,
+   totalPages: pagination.total_pages || 0,
+  });
+
   listElement.innerHTML = donations
    .map(
     (donation) => `
@@ -351,6 +534,10 @@ async function loadRecentDonations(page = 1) {
 
   updatePaginationControls(pagination);
  } catch (error) {
+  await GrafanaLogger.error("Failed to load donations", error, {
+   page,
+   limit: itemsPerPage,
+  });
   console.error("Error loading donations:", error);
   listElement.innerHTML = '<p class="empty">Gagal memuat data donasi.</p>';
   updatePaginationControls({});
@@ -381,6 +568,13 @@ async function loadDisbursements(page = 1) {
    updateDisbursementsPaginationControls(pagination);
    return;
   }
+
+  await GrafanaLogger.info("Disbursements loaded", {
+   page,
+   limit: itemsPerPage,
+   count: disbursements.length,
+   totalPages: pagination.total_pages || 0,
+  });
 
   listElement.innerHTML = disbursements
    .map((disbursement) => {
@@ -483,6 +677,10 @@ async function loadDisbursements(page = 1) {
 
   updateDisbursementsPaginationControls(pagination);
  } catch (error) {
+  await GrafanaLogger.error("Failed to load disbursements", error, {
+   page,
+   limit: itemsPerPage,
+  });
   console.error("Error loading disbursements:", error);
   listElement.innerHTML =
    '<p class="empty">Gagal memuat data penyaluran donasi.</p>';
@@ -817,6 +1015,11 @@ async function handleDonationSubmit(e) {
 
   // Redirect to Midtrans payment page
   if (result.payment_url) {
+   await GrafanaLogger.info("Donation created successfully", {
+    donationId: result.donation_id,
+    orderId: result.order_id,
+    amount: donationAmount,
+   });
    showToast("Mengalihkan ke halaman pembayaran...", "info");
    setTimeout(() => {
     window.location.href = result.payment_url;
@@ -825,6 +1028,12 @@ async function handleDonationSubmit(e) {
    throw new Error("Payment URL not received");
   }
  } catch (error) {
+  await GrafanaLogger.error("Failed to create donation", error, {
+   hasName: !!name,
+   hasEmail: !!email,
+   hasPhone: !!phone,
+   amount: donationAmount,
+  });
   showToast("Terjadi kesalahan", "error", error.message);
   submitBtn.disabled = false;
   submitBtn.textContent = originalText;
@@ -852,7 +1061,10 @@ function initHeroSlideshow() {
 }
 
 // Initialize on page load
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
+ // Initialize Grafana logger
+ await GrafanaLogger.init();
+ 
  loadStats();
  loadRecentDonations();
  loadDisbursements();
