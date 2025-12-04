@@ -34,8 +34,8 @@ export async function onRequest(context) {
   const path = url.pathname;
   const method = request.method;
 
-  // Initialize logger
-  const logger = createLogger(env, env.SERVICE_NAME || "gdg-donation-api");
+  // Initialize logger with execution context for waitUntil support
+  const logger = createLogger(env, env.SERVICE_NAME || "gdg-donation-api", context);
 
   // Validate environment variables on first request (in production, this could be cached)
   const envValidation = validateEnvVars(env);

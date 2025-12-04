@@ -6,6 +6,83 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// Sanitize HTML to allow safe formatting tags only
+function sanitizeHtml(html) {
+  if (!html) return "";
+  
+  // Use DOMParser for better security
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+  
+  // List of allowed tags (whitelist approach)
+  const allowedTags = new Set([
+    "strong", "b", "em", "i", "u", "p", "br", "span", "div",
+    "ul", "ol", "li", "h1", "h2", "h3", "h4", "h5", "h6",
+    "blockquote", "code", "pre", "a"
+  ]);
+  
+  // Recursively sanitize nodes
+  function sanitizeNode(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return document.createTextNode(node.textContent);
+    }
+    
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const tagName = node.tagName.toLowerCase();
+      
+      // If tag is not allowed, return its text content only
+      if (!allowedTags.has(tagName)) {
+        return document.createTextNode(node.textContent || "");
+      }
+      
+      // Create a new element with the same tag
+      const newElement = document.createElement(tagName);
+      
+      // Copy safe attributes for links only
+      if (tagName === "a") {
+        const href = node.getAttribute("href");
+        if (href && !href.match(/^(javascript|data):/i)) {
+          newElement.setAttribute("href", href);
+          if (node.getAttribute("target")) {
+            newElement.setAttribute("target", node.getAttribute("target"));
+          }
+          if (node.getAttribute("rel")) {
+            newElement.setAttribute("rel", node.getAttribute("rel"));
+          }
+        }
+      }
+      
+      // Recursively sanitize child nodes
+      for (let child of node.childNodes) {
+        const sanitized = sanitizeNode(child);
+        if (sanitized) {
+          newElement.appendChild(sanitized);
+        }
+      }
+      
+      return newElement;
+    }
+    
+    return null;
+  }
+  
+  // Sanitize the body content
+  const body = doc.body;
+  const fragment = document.createDocumentFragment();
+  
+  for (let child of body.childNodes) {
+    const sanitized = sanitizeNode(child);
+    if (sanitized) {
+      fragment.appendChild(sanitized);
+    }
+  }
+  
+  // Convert to HTML string
+  const div = document.createElement("div");
+  div.appendChild(fragment);
+  return div.innerHTML;
+}
+
 // Grafana.net Logging Utility (Client-side)
 const GrafanaLogger = {
  serviceName: "gdg-donation-frontend",
@@ -545,7 +622,7 @@ async function loadDisbursements(page = 1) {
                   <div class="activity-time">${formatDate(
                    activity.activity_time
                   )}</div>
-                  <div class="activity-description">${escapeHtml(activity.description)}</div>
+                  <div class="activity-description">${sanitizeHtml(activity.description)}</div>
                   ${
                    (activity.files && activity.files.length > 0)
                     ? `

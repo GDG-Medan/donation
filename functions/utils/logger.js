@@ -23,8 +23,9 @@ export const LogLevel = {
  * @param {Object} [options.context] - Additional context/metadata
  * @param {Error} [options.error] - Error object if logging an error
  * @param {Object} [options.env] - Cloudflare environment object
+ * @param {Object} [options.ctx] - Cloudflare execution context (for waitUntil)
  */
-async function sendToGrafana({ level, message, context = {}, error, env }) {
+async function sendToGrafana({ level, message, context = {}, error, env, ctx }) {
   // Only send to Grafana if credentials are configured
   if (!env?.GRAFANA_OTLP_ENDPOINT || !env?.GRAFANA_OTLP_AUTH) {
     return;
@@ -108,8 +109,9 @@ async function sendToGrafana({ level, message, context = {}, error, env }) {
       ],
     };
 
-    // Send to Grafana.net (fire and forget, don't block request)
-    fetch(env.GRAFANA_OTLP_ENDPOINT, {
+    // Send to Grafana.net
+    // Use ctx.waitUntil() if available to ensure fetch completes even after response is sent
+    const fetchPromise = fetch(env.GRAFANA_OTLP_ENDPOINT, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -120,6 +122,11 @@ async function sendToGrafana({ level, message, context = {}, error, env }) {
       // Silently fail - we don't want logging failures to break the app
       console.error("Failed to send log to Grafana:", err);
     });
+
+    // If we have access to execution context, use waitUntil to keep worker alive
+    if (ctx && typeof ctx.waitUntil === "function") {
+      ctx.waitUntil(fetchPromise);
+    }
   } catch (err) {
     // Silently fail - we don't want logging failures to break the app
     console.error("Error in Grafana logger:", err);
@@ -150,10 +157,12 @@ export class Logger {
    * Create a new logger instance
    * @param {Object} env - Cloudflare environment object
    * @param {string} [serviceName] - Service name for logging
+   * @param {Object} [ctx] - Cloudflare execution context (for waitUntil)
    */
-  constructor(env, serviceName = "gdg-donation-api") {
+  constructor(env, serviceName = "gdg-donation-api", ctx = null) {
     this.env = env;
     this.serviceName = serviceName;
+    this.ctx = ctx;
   }
 
   /**
@@ -168,6 +177,7 @@ export class Logger {
       message,
       context,
       env: this.env,
+      ctx: this.ctx,
     });
   }
 
@@ -183,6 +193,7 @@ export class Logger {
       message,
       context,
       env: this.env,
+      ctx: this.ctx,
     });
   }
 
@@ -198,6 +209,7 @@ export class Logger {
       message,
       context,
       env: this.env,
+      ctx: this.ctx,
     });
   }
 
@@ -215,6 +227,7 @@ export class Logger {
       error: error || new Error(message),
       context,
       env: this.env,
+      ctx: this.ctx,
     });
   }
 
@@ -232,6 +245,7 @@ export class Logger {
       error: error || new Error(message),
       context,
       env: this.env,
+      ctx: this.ctx,
     });
   }
 }
@@ -240,9 +254,10 @@ export class Logger {
  * Create a logger instance
  * @param {Object} env - Cloudflare environment object
  * @param {string} [serviceName] - Service name
+ * @param {Object} [ctx] - Cloudflare execution context (for waitUntil)
  * @returns {Logger} - Logger instance
  */
-export function createLogger(env, serviceName) {
-  return new Logger(env, serviceName);
+export function createLogger(env, serviceName, ctx = null) {
+  return new Logger(env, serviceName, ctx);
 }
 

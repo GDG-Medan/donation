@@ -29,7 +29,13 @@ export async function handleAdminLogin(request, env, logger) {
 
     if (password !== adminPassword) {
       if (logger) {
-        await logger.warn("Failed admin login attempt");
+        const ip = request.headers.get("CF-Connecting-IP") || 
+                   request.headers.get("X-Forwarded-For") || 
+                   "unknown";
+        await logger.warn("Failed admin login attempt", {
+          ip,
+          userAgent: request.headers.get("User-Agent") || "unknown",
+        });
       }
       return Errors.INVALID_CREDENTIALS();
     }
