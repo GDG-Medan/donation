@@ -59,8 +59,12 @@ export async function onRequest(context) {
     // Route handling
     let response;
 
+    // Client-side log endpoint (public, for forwarding logs to Grafana)
+    if (path === "/api/logs" && method === "POST") {
+      response = await handleClientLog(request, env, logger);
+    }
     // Grafana config endpoint (public, for client-side logging)
-    if (path === "/api/config/grafana" && method === "GET") {
+    else if (path === "/api/config/grafana" && method === "GET") {
       response = await handlePublicGrafanaConfig(env, logger);
     }
     // Stats endpoint
@@ -224,10 +228,8 @@ async function handleGrafanaConfig(request, env, logger) {
     return Errors.UNAUTHORIZED();
   }
 
-  // Return Grafana config if available
+  // Return whether logging is enabled (no credentials needed, logs go through backend)
   const config = {
-    endpoint: env.GRAFANA_OTLP_ENDPOINT || null,
-    auth: env.GRAFANA_OTLP_AUTH || null,
     enabled: !!(env.GRAFANA_OTLP_ENDPOINT && env.GRAFANA_OTLP_AUTH),
   };
 
@@ -246,11 +248,8 @@ async function handleGrafanaConfig(request, env, logger) {
  * @returns {Promise<Response>} - HTTP response
  */
 async function handlePublicGrafanaConfig(env, logger) {
-  // Return Grafana config if available (public endpoint, no auth required)
-  // This is safe because the auth token itself is what secures Grafana, not the endpoint URL
+  // Return whether logging is enabled (no credentials needed, logs go through backend)
   const config = {
-    endpoint: env.GRAFANA_OTLP_ENDPOINT || null,
-    auth: env.GRAFANA_OTLP_AUTH || null,
     enabled: !!(env.GRAFANA_OTLP_ENDPOINT && env.GRAFANA_OTLP_AUTH),
   };
 
@@ -260,4 +259,81 @@ async function handlePublicGrafanaConfig(env, logger) {
       "Access-Control-Allow-Origin": "*",
     },
   });
+}
+
+/**
+ * Handle client-side log entries and forward to Grafana
+ * @param {Request} request - HTTP request
+ * @param {Object} env - Cloudflare environment
+ * @param {Object} logger - Logger instance
+ * @returns {Promise<Response>} - HTTP response
+ */
+async function handleClientLog(request, env, logger) {
+  try {
+    const body = await request.json();
+    const { level, message, context = {}, error = null, serviceName = "gdg-donation-frontend", source = "public-frontend" } = body;
+
+    if (!level || !message) {
+      return new Response(JSON.stringify({ error: "Missing required fields: level, message" }), {
+        status: 400,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
+
+    // Forward log to Grafana using backend logger
+    // The backend logger handles the actual Grafana communication
+    const logContext = {
+      ...context,
+      source,
+      clientServiceName: serviceName,
+    };
+
+    // Use the appropriate logger method based on level
+    switch (level.toLowerCase()) {
+      case "debug":
+        await logger.debug(message, logContext);
+        break;
+      case "info":
+        await logger.info(message, logContext);
+        break;
+      case "warn":
+        await logger.warn(message, logContext);
+        break;
+      case "error":
+      case "fatal":
+        // Create error object if error details provided
+        const errorObj = error ? new Error(error.message || message) : null;
+        if (errorObj && error.stack) {
+          errorObj.stack = error.stack;
+        }
+        if (level.toLowerCase() === "fatal") {
+          await logger.fatal(message, errorObj, logContext);
+        } else {
+          await logger.error(message, errorObj, logContext);
+        }
+        break;
+      default:
+        await logger.info(message, logContext);
+    }
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  } catch (error) {
+    // Silently fail - don't break the app if logging fails
+    return new Response(JSON.stringify({ success: false, error: "Failed to process log" }), {
+      status: 500,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  }
 }

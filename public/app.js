@@ -8,23 +8,17 @@ function escapeHtml(text) {
 
 // Grafana.net Logging Utility (Client-side)
 const GrafanaLogger = {
- endpoint: null,
- auth: null,
  serviceName: "gdg-donation-frontend",
  enabled: false,
 
  async init() {
-  // Get credentials from public config endpoint
+  // Check if logging is enabled via backend
   try {
    const response = await fetch("/api/config/grafana");
 
    if (response.ok) {
     const config = await response.json();
-    if (config.enabled) {
-     this.endpoint = config.endpoint;
-     this.auth = config.auth;
-     this.enabled = true;
-    }
+    this.enabled = config.enabled || false;
    }
   } catch (error) {
    // Silently fail - logging is optional
@@ -32,16 +26,6 @@ const GrafanaLogger = {
   }
  },
 
- getSeverityNumber(level) {
-  const severityMap = {
-   debug: 5,
-   info: 9,
-   warn: 13,
-   error: 17,
-   fatal: 21,
-  };
-  return severityMap[level.toLowerCase()] || 9;
- },
 
  async sendLog(level, message, context = {}, error = null) {
   if (!this.enabled) {
@@ -53,103 +37,37 @@ const GrafanaLogger = {
   }
 
   try {
-   const timestamp = Date.now() * 1000000; // Convert to nanoseconds
+   // Prepare error object for serialization
+   const errorData = error
+    ? {
+       name: error.name || "Error",
+       message: error.message || "",
+       stack: error.stack || "",
+      }
+    : null;
 
-   const logRecord = {
-    timeUnixNano: timestamp.toString(),
-    severityNumber: this.getSeverityNumber(level),
-    severityText: level.toUpperCase(),
-    body: {
-     stringValue: message,
-    },
-    attributes: [
-     {
-      key: "log.level",
-      value: { stringValue: level },
-     },
-     {
-      key: "service.name",
-      value: { stringValue: this.serviceName },
-     },
-     {
-      key: "environment",
-      value: { stringValue: "production" },
-     },
-     {
-      key: "source",
-      value: { stringValue: "public-frontend" },
-     },
-    ],
-   };
-
-   // Add error details if present
-   if (error) {
-    logRecord.attributes.push(
-     {
-      key: "error.type",
-      value: { stringValue: error.name || "Error" },
-     },
-     {
-      key: "error.message",
-      value: { stringValue: error.message || "" },
-     },
-     {
-      key: "error.stack",
-      value: { stringValue: error.stack || "" },
-     }
-    );
-   }
-
-   // Add custom context attributes
-   Object.entries(context).forEach(([key, value]) => {
-    logRecord.attributes.push({
-     key: `context.${key}`,
-     value: {
-      stringValue:
-       typeof value === "object" ? JSON.stringify(value) : String(value),
-     },
-    });
-   });
-
-   const payload = {
-    resourceLogs: [
-     {
-      resource: {
-       attributes: [
-        {
-         key: "service.name",
-         value: { stringValue: this.serviceName },
-        },
-        {
-         key: "service.version",
-         value: { stringValue: "1.0.0" },
-        },
-       ],
-      },
-      scopeLogs: [
-       {
-        logRecords: [logRecord],
-       },
-      ],
-     },
-    ],
-   };
-
-   // Send to Grafana.net (fire and forget)
-   fetch(this.endpoint, {
+   // Send log to backend endpoint (which forwards to Grafana)
+   // This avoids CORS issues
+   fetch("/api/logs", {
     method: "POST",
     headers: {
      "Content-Type": "application/json",
-     Authorization: `Basic ${this.auth}`,
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+     level,
+     message,
+     context,
+     error: errorData,
+     serviceName: this.serviceName,
+     source: "public-frontend",
+    }),
    }).catch((err) => {
     // Silently fail - we don't want logging failures to break the app
-    console.error("Failed to send log to Grafana:", err);
+    console.debug("Failed to send log to backend:", err);
    });
   } catch (err) {
    // Silently fail
-   console.error("Error in Grafana logger:", err);
+   console.debug("Error in Grafana logger:", err);
   }
  },
 
