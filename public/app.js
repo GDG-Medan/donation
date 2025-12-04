@@ -202,9 +202,9 @@ async function loadDisbursements(page = 1) {
                           <div class="activity-gallery-item">
                             ${
                              isImage
-                              ? `<a href="${file.file_url}" target="_blank" rel="noopener noreferrer" class="activity-gallery-link">
+                              ? `<div class="activity-gallery-link" onclick="openImageModal('${file.file_url}', '${(file.file_name || "Image").replace(/'/g, "&#39;")}')" style="cursor: pointer;">
                                    <img src="${file.file_url}" alt="${file.file_name || "Image"}" loading="lazy" />
-                                 </a>`
+                                 </div>`
                               : isVideo
                               ? `<div class="activity-gallery-video">
                                    <video src="${file.file_url}" controls preload="metadata"></video>
@@ -569,5 +569,39 @@ document.addEventListener("DOMContentLoaded", () => {
  amountInput.addEventListener("input", (e) => {
   const amount = parseInt(e.target.value) || 0;
   updateFeeBreakdown(amount);
+ });
+
+ // Image Modal functionality
+ const imageModal = document.getElementById("image-modal");
+ const modalImg = document.getElementById("image-modal-img");
+ const modalCaption = document.getElementById("image-modal-caption");
+ const modalClose = document.querySelector(".image-modal-close");
+
+ // Open image modal
+ window.openImageModal = function (imageUrl, caption) {
+  imageModal.style.display = "block";
+  modalImg.src = imageUrl;
+  modalCaption.textContent = caption || "";
+ };
+
+ // Close modal when clicking the X
+ if (modalClose) {
+  modalClose.onclick = function () {
+   imageModal.style.display = "none";
+  };
+ }
+
+ // Close modal when clicking outside the image
+ imageModal.onclick = function (event) {
+  if (event.target === imageModal) {
+   imageModal.style.display = "none";
+  }
+ };
+
+ // Close modal with Escape key
+ document.addEventListener("keydown", function (event) {
+  if (event.key === "Escape" && imageModal.style.display === "block") {
+   imageModal.style.display = "none";
+  }
  });
 });
