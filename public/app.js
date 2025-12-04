@@ -57,12 +57,12 @@ async function loadStats() {
   const data = await response.json();
 
   document.getElementById("total-raised").textContent = formatCurrency(
-   data.totalRaised || 0
+   data.total_raised || 0
   );
   document.getElementById("total-disbursed").textContent = formatCurrency(
-   data.totalDisbursed || 0
+   data.total_disbursed || 0
   );
-  document.getElementById("donor-count").textContent = data.donorCount || 0;
+  document.getElementById("donor-count").textContent = data.donor_count || 0;
  } catch (error) {
   console.error("Error loading stats:", error);
  }

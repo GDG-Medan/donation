@@ -26,9 +26,30 @@ binding = "ACTIVITY_FILES"
 bucket_name = "activity-files"
 
 [env.production.vars]
+# Required: Payment Processing
 MIDTRANS_SERVER_KEY = "YOUR_MIDTRANS_SERVER_KEY"
 MIDTRANS_CLIENT_KEY = "YOUR_MIDTRANS_CLIENT_KEY"
+
+# Required: Admin Authentication
 ADMIN_PASSWORD_HASH = "YOUR_ADMIN_PASSWORD"
-# Optional: Custom domain for R2 public files (e.g., "files.yourdomain.com")
+
+# Required: Site Configuration
+SITE_URL = "https://your-domain.pages.dev"
+
+# Optional: Service Configuration
+# SERVICE_NAME = "gdg-donation-api"
+# SERVICE_VERSION = "1.0.0"
+# ENVIRONMENT = "production"
+
+# Optional: Grafana.net Logging (OTLP)
+# Get your endpoint from: https://grafana.com/docs/grafana-cloud/monitor-applications/application-observability/collect-otlp-logs/
+# Generate auth token: echo -n "your-instance-id:your-api-token" | base64
+# GRAFANA_OTLP_ENDPOINT = "https://otlp-gateway-prod-ap-southeast-2.grafana.net/otlp/v1/logs"
+# GRAFANA_OTLP_AUTH = "your-base64-encoded-auth-token"
+
+# Optional: Custom domain for R2 public files
 # R2_PUBLIC_DOMAIN = "files.yourdomain.com"
+
+# Optional: CORS Configuration
+# ALLOWED_ORIGINS = "https://your-domain.pages.dev,https://yourdomain.com"
 

@@ -1,1020 +1,190 @@
-import {
- isValidEmail,
- isValidPhone,
- sanitizeHtml,
- sanitizeText,
- isValidDonationAmount,
-} from "./validation.js";
+/**
+ * Main API router for Cloudflare Pages Functions
+ * @module api/router
+ */
 
-export async function onRequest(context) {
- const { request, env } = context;
- const url = new URL(request.url);
- const path = url.pathname;
- const method = request.method;
+import { createLogger } from "../utils/logger.js";
+import { Errors, handleError } from "../utils/errors.js";
+import { validateEnvVars } from "../utils/env.js";
+import * as donationRoutes from "../routes/donations.js";
+import * as adminRoutes from "../routes/admin.js";
+import * as disbursementRoutes from "../routes/disbursements.js";
 
- // CORS headers
- const corsHeaders = {
+/**
+ * CORS headers
+ * @type {Object<string, string>}
+ */
+const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
- };
+};
 
- // Handle OPTIONS requests
- if (method === "OPTIONS") {
-  return new Response(null, { headers: corsHeaders });
- }
+/**
+ * Main request handler
+ * @param {Object} context - Cloudflare Pages context
+ * @param {Request} context.request - HTTP request
+ * @param {Object} context.env - Environment variables
+ * @returns {Promise<Response>} - HTTP response
+ */
+export async function onRequest(context) {
+  const { request, env } = context;
+  const url = new URL(request.url);
+  const path = url.pathname;
+  const method = request.method;
 
- // Route handling
- try {
-  // Stats endpoint
-  if (path === "/api/stats" && method === "GET") {
-   return handleStats(env);
+  // Initialize logger
+  const logger = createLogger(env, env.SERVICE_NAME || "gdg-donation-api");
+
+  // Validate environment variables on first request (in production, this could be cached)
+  const envValidation = validateEnvVars(env);
+  if (!envValidation.valid) {
+    await logger.error("Environment validation failed", null, {
+      missing: envValidation.missing,
+      errors: envValidation.errors,
+    });
+    // Don't fail the request, but log the issue
   }
 
-  // Recent donations endpoint
-  if (path === "/api/donations" && method === "GET") {
-   return handleGetDonations(request, env);
+  // Handle OPTIONS requests
+  if (method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
   }
 
-  // Create donation endpoint
-  if (path === "/api/donations" && method === "POST") {
-   return handleCreateDonation(request, env);
-  }
-
-  // Get disbursements endpoint (public)
-  if (path === "/api/disbursements" && method === "GET") {
-   return handleGetDisbursementsPublic(request, env);
-  }
-
-  // Midtrans webhook endpoint
-  if (path === "/api/midtrans/notification" && method === "POST") {
-   return handleMidtransWebhook(request, env);
-  }
-
-  // Admin login endpoint
-  if (path === "/api/admin/login" && method === "POST") {
-   return handleAdminLogin(request, env);
-  }
-
-  // Get disbursements endpoint
-  if (path === "/api/admin/disbursements" && method === "GET") {
-   return handleGetDisbursements(request, env);
-  }
-
-  // Create disbursement endpoint
-  if (path === "/api/admin/disbursements" && method === "POST") {
-   return handleCreateDisbursement(request, env);
-  }
-
-  // Get or create disbursement activities endpoint
-  const activitiesMatch = path.match(
-   /^\/api\/admin\/disbursements\/(\d+)\/activities$/
-  );
-  if (activitiesMatch) {
-   const disbursementId = parseInt(activitiesMatch[1]);
-   if (method === "GET") {
-    return handleGetDisbursementActivities(disbursementId, request, env);
-   }
-   if (method === "POST") {
-    return handleCreateDisbursementActivity(disbursementId, request, env);
-   }
-  }
-
-  // File upload endpoint
-  if (path === "/api/admin/upload" && method === "POST") {
-   return handleFileUpload(request, env);
-  }
-
-  return new Response("Not Found", { status: 404, headers: corsHeaders });
- } catch (error) {
-  console.error("API Error:", error);
-  return new Response(
-   JSON.stringify({ error: "Internal Server Error", message: error.message }),
-   {
-    status: 500,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-   }
-  );
- }
-}
-
-// Get donation statistics
-async function handleStats(env) {
- const db = env.DB;
-
- // Get total raised (only successful donations)
- const totalRaisedResult = await db
-  .prepare(
-   "SELECT COALESCE(SUM(amount), 0) as total FROM donations WHERE status = ?"
-  )
-  .bind("success")
-  .first();
-
- // Get total disbursed
- const totalDisbursedResult = await db
-  .prepare("SELECT COALESCE(SUM(amount), 0) as total FROM disbursements")
-  .first();
-
- // Get donor count (only successful donations)
- const donorCountResult = await db
-  .prepare("SELECT COUNT(*) as count FROM donations WHERE status = ?")
-  .bind("success")
-  .first();
-
- return new Response(
-  JSON.stringify({
-   totalRaised: totalRaisedResult?.total || 0,
-   totalDisbursed: totalDisbursedResult?.total || 0,
-   donorCount: donorCountResult?.count || 0,
-  }),
-  {
-   headers: {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-   },
-  }
- );
-}
-
-// Get recent donations
-async function handleGetDonations(request, env) {
- const db = env.DB;
- const url = new URL(request.url);
-
- // Get pagination parameters
- const page = parseInt(url.searchParams.get("page")) || 1;
- const limit = parseInt(url.searchParams.get("limit")) || 10;
- const offset = (page - 1) * limit;
-
- // Get total count for pagination
- const countResult = await db
-  .prepare("SELECT COUNT(*) as total FROM donations WHERE status = ?")
-  .bind("success")
-  .first();
-
- const totalCount = countResult?.total || 0;
- const totalPages = Math.ceil(totalCount / limit);
-
- // Get paginated donations
- const donations = await db
-  .prepare(
-   `SELECT name, email, phone, amount, message, anonymous, created_at 
-      FROM donations 
-      WHERE status = ? 
-      ORDER BY created_at DESC 
-      LIMIT ? OFFSET ?`
-  )
-  .bind("success", limit, offset)
-  .all();
-
- // Hide sensitive user data
- const sanitizedDonations = (donations.results || []).map((donation) => {
-  const sanitized = {
-   amount: donation.amount,
-   created_at: donation.created_at,
-  };
-
-  // Show name only if not anonymous
-  if (donation.anonymous) {
-   sanitized.name = "Donatur Anonim";
-  } else {
-   sanitized.name = donation.name;
-  }
-
-  // Always hide email and phone
-  // Don't include email and phone in response
-
-  // Include message if provided
-  if (donation.message) {
-   sanitized.message = donation.message;
-  }
-
-  return sanitized;
- });
-
- return new Response(
-  JSON.stringify({
-   donations: sanitizedDonations,
-   pagination: {
-    page: page,
-    limit: limit,
-    total_count: totalCount,
-    total_pages: totalPages,
-    has_next: page < totalPages,
-    has_prev: page > 1,
-   },
-  }),
-  {
-   headers: {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-   },
-  }
- );
-}
-
-// Create donation and initiate Midtrans payment
-async function handleCreateDonation(request, env) {
- const db = env.DB;
- const data = await request.json();
-
- // Validate required fields
- if (!data.name || !data.email || !data.amount) {
-  return new Response(
-   JSON.stringify({
-    error: "Invalid donation data",
-    message: "Name, email, and amount are required",
-   }),
-   {
-    status: 400,
-    headers: {
-     "Content-Type": "application/json",
-     "Access-Control-Allow-Origin": "*",
-    },
-   }
-  );
- }
-
- // Validate email format
- if (!isValidEmail(data.email)) {
-  return new Response(
-   JSON.stringify({
-    error: "Invalid email format",
-    message: "Please provide a valid email address",
-   }),
-   {
-    status: 400,
-    headers: {
-     "Content-Type": "application/json",
-     "Access-Control-Allow-Origin": "*",
-    },
-   }
-  );
- }
-
- // Validate phone number if provided
- if (data.phone && !isValidPhone(data.phone)) {
-  return new Response(
-   JSON.stringify({
-    error: "Invalid phone number format",
-    message: "Please provide a valid Indonesian phone number",
-   }),
-   {
-    status: 400,
-    headers: {
-     "Content-Type": "application/json",
-     "Access-Control-Allow-Origin": "*",
-    },
-   }
-  );
- }
-
- // Validate donation amount
- if (!isValidDonationAmount(data.amount)) {
-  return new Response(
-   JSON.stringify({
-    error: "Invalid donation amount",
-    message: "Amount must be between Rp 10,000 and Rp 1,000,000,000",
-   }),
-   {
-    status: 400,
-    headers: {
-     "Content-Type": "application/json",
-     "Access-Control-Allow-Origin": "*",
-    },
-   }
-  );
- }
-
- // Sanitize inputs
- const sanitizedName = sanitizeText(data.name, 255);
- const sanitizedEmail = data.email.trim().toLowerCase(); // Email is already validated, just normalize
- const sanitizedPhone = data.phone ? sanitizeText(data.phone, 20) : null;
- const sanitizedMessage = data.message ? sanitizeHtml(data.message) : null;
-
- // Calculate fee (0.7%) and total amount
- const donationAmount = parseInt(data.amount);
- const fee = Math.ceil(donationAmount * 0.007);
- const totalAmount = donationAmount + fee;
-
- // Insert donation record (store original donation amount, not including fee)
- const result = await db
-  .prepare(
-   `INSERT INTO donations (name, email, phone, amount, message, anonymous, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`
-  )
-  .bind(
-   sanitizedName,
-   sanitizedEmail,
-   sanitizedPhone,
-   donationAmount, // Store original donation amount
-   sanitizedMessage,
-   data.anonymous ? 1 : 0,
-   "pending"
-  )
-  .run();
-
- const donationId = result.meta.last_row_id;
- const orderId = `DONATION-${donationId}-${Date.now()}`;
-
- // Update with order ID
- await db
-  .prepare("UPDATE donations SET midtrans_order_id = ? WHERE id = ?")
-  .bind(orderId, donationId)
-  .run();
-
- // Create Midtrans transaction with total amount (donation + fee)
- const origin = new URL(request.url).origin;
- const midtransResponse = await createMidtransTransaction(
-  orderId,
-  totalAmount, // Use total amount including fee for payment
-  data.name,
-  data.email,
-  origin,
-  env
- );
-
- if (!midtransResponse || !midtransResponse.token) {
-  // Update donation status to failed
-  await db
-   .prepare("UPDATE donations SET status = ? WHERE id = ?")
-   .bind("failed", donationId)
-   .run();
-
-  return new Response(
-   JSON.stringify({ error: "Payment initialization failed" }),
-   {
-    status: 500,
-    headers: {
-     "Content-Type": "application/json",
-     "Access-Control-Allow-Origin": "*",
-    },
-   }
-  );
- }
-
- return new Response(
-  JSON.stringify({
-   donation_id: donationId,
-   order_id: orderId,
-   payment_url:
-    midtransResponse.redirect_url ||
-    `https://app.sandbox.midtrans.com/snap/v2/vtweb/${midtransResponse.token}`,
-  }),
-  {
-   headers: {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-   },
-  }
- );
-}
-
-// Create Midtrans transaction
-async function createMidtransTransaction(
- orderId,
- amount,
- customerName,
- customerEmail,
- origin,
- env
-) {
- const serverKey = env.MIDTRANS_SERVER_KEY;
- const isProduction = serverKey && !serverKey.includes("SB-My");
-
- const midtransUrl = isProduction
-  ? "https://app.midtrans.com/snap/v1/transactions"
-  : "https://app.sandbox.midtrans.com/snap/v1/transactions";
-
- const transactionDetails = {
-  transaction_details: {
-   order_id: orderId,
-   gross_amount: amount,
-  },
-  customer_details: {
-   first_name: customerName,
-   email: customerEmail,
-  },
-  callbacks: {
-   finish: `${origin}/`,
-   error: `${origin}/`,
-  },
- };
-
- try {
-  const response = await fetch(midtransUrl, {
-   method: "POST",
-   headers: {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-    Authorization: `Basic ${btoa(serverKey + ":")}`,
-   },
-   body: JSON.stringify(transactionDetails),
-  });
-
-  if (!response.ok) {
-   const errorText = await response.text();
-   console.error("Midtrans API Error:", errorText);
-   return null;
-  }
-
-  return await response.json();
- } catch (error) {
-  console.error("Midtrans request error:", error);
-  return null;
- }
-}
-
-// Handle Midtrans webhook
-async function handleMidtransWebhook(request, env) {
- const db = env.DB;
- const notification = await request.json();
-
- const orderId = notification.order_id;
- const transactionStatus = notification.transaction_status;
- const fraudStatus = notification.fraud_status;
-
- // Verify the notification (in production, verify signature)
- if (fraudStatus === "accept") {
-  if (transactionStatus === "capture" || transactionStatus === "settlement") {
-   // Payment successful
-   await db
-    .prepare("UPDATE donations SET status = ? WHERE midtrans_order_id = ?")
-    .bind("success", orderId)
-    .run();
-  } else if (
-   transactionStatus === "cancel" ||
-   transactionStatus === "deny" ||
-   transactionStatus === "expire"
-  ) {
-   // Payment failed
-   await db
-    .prepare("UPDATE donations SET status = ? WHERE midtrans_order_id = ?")
-    .bind("failed", orderId)
-    .run();
-  }
- }
-
- return new Response("OK", { status: 200 });
-}
-
-// Admin login
-async function handleAdminLogin(request, env) {
- const db = env.DB;
- const { password } = await request.json();
-
- // Simple password check (in production, use proper password hashing like bcrypt)
- // For now, ADMIN_PASSWORD_HASH can be set to your plain password
- // In production, hash the password and compare hashes
- const adminPassword = env.ADMIN_PASSWORD_HASH;
-
- if (password !== adminPassword) {
-  return new Response(JSON.stringify({ error: "Invalid password" }), {
-   status: 401,
-   headers: {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-   },
-  });
- }
-
- // Generate session token
- const token = crypto.randomUUID();
- const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours
-
- await db
-  .prepare("INSERT INTO admin_sessions (token, expires_at) VALUES (?, ?)")
-  .bind(token, expiresAt)
-  .run();
-
- return new Response(JSON.stringify({ token, expires_at: expiresAt }), {
-  headers: {
-   "Content-Type": "application/json",
-   "Access-Control-Allow-Origin": "*",
-  },
- });
-}
-
-// Get disbursements (public)
-async function handleGetDisbursementsPublic(request, env) {
- const db = env.DB;
- const url = new URL(request.url);
-
- // Get pagination parameters
- const page = parseInt(url.searchParams.get("page")) || 1;
- const limit = parseInt(url.searchParams.get("limit")) || 10;
- const offset = (page - 1) * limit;
-
- // Get total count for pagination
- const countResult = await db
-  .prepare("SELECT COUNT(*) as total FROM disbursements")
-  .first();
-
- const totalCount = countResult?.total || 0;
- const totalPages = Math.ceil(totalCount / limit);
-
- // Get paginated disbursements
- const disbursements = await db
-  .prepare(
-   `SELECT id, amount, description, created_at 
-      FROM disbursements 
-      ORDER BY created_at DESC 
-      LIMIT ? OFFSET ?`
-  )
-  .bind(limit, offset)
-  .all();
-
- // Get activities for each disbursement
- const disbursementsWithActivities = await Promise.all(
-  (disbursements.results || []).map(async (disbursement) => {
-   const activities = await db
-    .prepare(
-     `SELECT id, activity_time, description, file_url, file_name, created_at 
-        FROM disbursement_activities 
-        WHERE disbursement_id = ? 
-        ORDER BY activity_time ASC`
-    )
-    .bind(disbursement.id)
-    .all();
-
-   // Get files for each activity
-   const activitiesWithFiles = await Promise.all(
-    (activities.results || []).map(async (activity) => {
-     const files = await db
-      .prepare(
-       `SELECT id, file_url, file_name, file_type, created_at 
-          FROM activity_files 
-          WHERE activity_id = ? 
-          ORDER BY created_at ASC`
-      )
-      .bind(activity.id)
-      .all();
-
-     return {
-      ...activity,
-      files: files.results || [],
-     };
-    })
-   );
-
-   return {
-    ...disbursement,
-    activities: activitiesWithFiles,
-   };
-  })
- );
-
- return new Response(
-  JSON.stringify({
-   disbursements: disbursementsWithActivities,
-   pagination: {
-    page: page,
-    limit: limit,
-    total_count: totalCount,
-    total_pages: totalPages,
-    has_next: page < totalPages,
-    has_prev: page > 1,
-   },
-  }),
-  {
-   headers: {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-   },
-  }
- );
-}
-
-// Get disbursements (admin only)
-async function handleGetDisbursements(request, env) {
- const db = env.DB;
- const token = request.headers.get("Authorization")?.replace("Bearer ", "");
-
- if (!token || !(await verifyAdminToken(token, db))) {
-  return new Response(JSON.stringify({ error: "Unauthorized" }), {
-   status: 401,
-   headers: {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-   },
-  });
- }
-
- const disbursements = await db
-  .prepare("SELECT * FROM disbursements ORDER BY created_at DESC")
-  .all();
-
- // Get activities for each disbursement
- const disbursementsWithActivities = await Promise.all(
-  (disbursements.results || []).map(async (disbursement) => {
-   const activities = await db
-    .prepare(
-     `SELECT id, activity_time, description, file_url, file_name, created_at 
-        FROM disbursement_activities 
-        WHERE disbursement_id = ? 
-        ORDER BY activity_time ASC`
-    )
-    .bind(disbursement.id)
-    .all();
-
-   // Get files for each activity
-   const activitiesWithFiles = await Promise.all(
-    (activities.results || []).map(async (activity) => {
-     const files = await db
-      .prepare(
-       `SELECT id, file_url, file_name, file_type, created_at 
-          FROM activity_files 
-          WHERE activity_id = ? 
-          ORDER BY created_at ASC`
-      )
-      .bind(activity.id)
-      .all();
-
-     return {
-      ...activity,
-      files: files.results || [],
-     };
-    })
-   );
-
-   return {
-    ...disbursement,
-    activities: activitiesWithFiles,
-   };
-  })
- );
-
- return new Response(JSON.stringify(disbursementsWithActivities), {
-  headers: {
-   "Content-Type": "application/json",
-   "Access-Control-Allow-Origin": "*",
-  },
- });
-}
-
-// Create disbursement (admin only)
-async function handleCreateDisbursement(request, env) {
- const db = env.DB;
- const token = request.headers.get("Authorization")?.replace("Bearer ", "");
-
- if (!token || !(await verifyAdminToken(token, db))) {
-  return new Response(JSON.stringify({ error: "Unauthorized" }), {
-   status: 401,
-   headers: {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-   },
-  });
- }
-
- const { amount, description } = await request.json();
-
- if (!amount || !description || amount <= 0) {
-  return new Response(JSON.stringify({ error: "Invalid disbursement data" }), {
-   status: 400,
-   headers: {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-   },
-  });
- }
-
- // Sanitize description to prevent XSS
- const sanitizedDescription = sanitizeHtml(description);
-
- await db
-  .prepare("INSERT INTO disbursements (amount, description) VALUES (?, ?)")
-  .bind(amount, sanitizedDescription)
-  .run();
-
- return new Response(JSON.stringify({ success: true }), {
-  headers: {
-   "Content-Type": "application/json",
-   "Access-Control-Allow-Origin": "*",
-  },
- });
-}
-
-// Get disbursement activities (admin only)
-async function handleGetDisbursementActivities(disbursementId, request, env) {
- const db = env.DB;
- const token = request.headers.get("Authorization")?.replace("Bearer ", "");
-
- if (!token || !(await verifyAdminToken(token, db))) {
-  return new Response(JSON.stringify({ error: "Unauthorized" }), {
-   status: 401,
-   headers: {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-   },
-  });
- }
-
- // Verify disbursement exists
- const disbursement = await db
-  .prepare("SELECT id FROM disbursements WHERE id = ?")
-  .bind(disbursementId)
-  .first();
-
- if (!disbursement) {
-  return new Response(JSON.stringify({ error: "Disbursement not found" }), {
-   status: 404,
-   headers: {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-   },
-  });
- }
-
- const activities = await db
-  .prepare(
-   `SELECT id, activity_time, description, file_url, file_name, created_at 
-      FROM disbursement_activities 
-      WHERE disbursement_id = ? 
-      ORDER BY activity_time ASC`
-  )
-  .bind(disbursementId)
-  .all();
-
- // Get files for each activity
- const activitiesWithFiles = await Promise.all(
-  (activities.results || []).map(async (activity) => {
-   const files = await db
-    .prepare(
-     `SELECT id, file_url, file_name, file_type, created_at 
-        FROM activity_files 
-        WHERE activity_id = ? 
-        ORDER BY created_at ASC`
-    )
-    .bind(activity.id)
-    .all();
-
-   return {
-    ...activity,
-    files: files.results || [],
-   };
-  })
- );
-
- return new Response(JSON.stringify(activitiesWithFiles), {
-  headers: {
-   "Content-Type": "application/json",
-   "Access-Control-Allow-Origin": "*",
-  },
- });
-}
-
-// Create disbursement activity (admin only)
-async function handleCreateDisbursementActivity(disbursementId, request, env) {
- const db = env.DB;
- const token = request.headers.get("Authorization")?.replace("Bearer ", "");
-
- if (!token || !(await verifyAdminToken(token, db))) {
-  return new Response(JSON.stringify({ error: "Unauthorized" }), {
-   status: 401,
-   headers: {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-   },
-  });
- }
-
- // Verify disbursement exists
- const disbursement = await db
-  .prepare("SELECT id FROM disbursements WHERE id = ?")
-  .bind(disbursementId)
-  .first();
-
- if (!disbursement) {
-  return new Response(JSON.stringify({ error: "Disbursement not found" }), {
-   status: 404,
-   headers: {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-   },
-  });
- }
-
- const { activity_time, description, files } = await request.json();
-
- if (!activity_time || !description) {
-  return new Response(
-   JSON.stringify({
-    error: "Invalid activity data",
-    message: "activity_time and description are required",
-   }),
-   {
-    status: 400,
-    headers: {
-     "Content-Type": "application/json",
-     "Access-Control-Allow-Origin": "*",
-    },
-   }
-  );
- }
-
- // Sanitize description to prevent XSS
- const sanitizedDescription = sanitizeHtml(description);
-
- // Create activity (without file_url and file_name for backward compatibility)
- const result = await db
-  .prepare(
-   "INSERT INTO disbursement_activities (disbursement_id, activity_time, description) VALUES (?, ?, ?)"
-  )
-  .bind(disbursementId, activity_time, sanitizedDescription)
-  .run();
-
- const activityId = result.meta.last_row_id;
-
- // Insert files if provided
- if (files && Array.isArray(files) && files.length > 0) {
-  for (const file of files) {
-   if (file.file_url && file.file_name) {
-    // Sanitize file name and validate URL format
-    const sanitizedFileName = sanitizeText(file.file_name, 255);
-    const sanitizedFileUrl = sanitizeText(file.file_url, 500);
-    const sanitizedFileType = file.file_type ? sanitizeText(file.file_type, 50) : null;
-
-    await db
-     .prepare(
-      "INSERT INTO activity_files (activity_id, file_url, file_name, file_type) VALUES (?, ?, ?, ?)"
-     )
-     .bind(
-      activityId,
-      sanitizedFileUrl,
-      sanitizedFileName,
-      sanitizedFileType
-     )
-     .run();
-   }
-  }
- }
-
- return new Response(JSON.stringify({ success: true, activity_id: activityId }), {
-  headers: {
-   "Content-Type": "application/json",
-   "Access-Control-Allow-Origin": "*",
-  },
- });
-}
-
-// Handle file upload to R2 (admin only)
-async function handleFileUpload(request, env) {
- const token = request.headers.get("Authorization")?.replace("Bearer ", "");
- const db = env.DB;
-
- if (!token || !(await verifyAdminToken(token, db))) {
-  return new Response(JSON.stringify({ error: "Unauthorized" }), {
-   status: 401,
-   headers: {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-   },
-  });
- }
-
- try {
-  const formData = await request.formData();
-  const file = formData.get("file");
-
-  if (!file || !(file instanceof File)) {
-   return new Response(JSON.stringify({ error: "No file provided" }), {
-    status: 400,
-    headers: {
-     "Content-Type": "application/json",
-     "Access-Control-Allow-Origin": "*",
-    },
-   });
-  }
-
-  // Validate file size (max 10MB)
-  const maxSize = 10 * 1024 * 1024; // 10MB
-  if (file.size > maxSize) {
-   return new Response(
-    JSON.stringify({ error: "File size exceeds 10MB limit" }),
-    {
-     status: 400,
-     headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
-     },
+  // Generate request ID for tracking
+  const requestId = crypto.randomUUID();
+
+  try {
+    // Route handling
+    let response;
+
+    // Stats endpoint
+    if (path === "/api/stats" && method === "GET") {
+      response = await donationRoutes.handleStats(env, logger);
     }
-   );
-  }
-
-  // Validate file type (images and common document types)
-  const allowedTypes = [
-   "image/jpeg",
-   "image/jpg",
-   "image/png",
-   "image/gif",
-   "image/webp",
-   "application/pdf",
-   "video/mp4",
-   "video/quicktime",
-  ];
-  if (!allowedTypes.includes(file.type)) {
-   return new Response(
-    JSON.stringify({
-     error: "File type not allowed",
-     message: "Allowed types: images, PDF, MP4",
-    }),
-    {
-     status: 400,
-     headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
-     },
+    // Recent donations endpoint
+    else if (path === "/api/donations" && method === "GET") {
+      response = await donationRoutes.handleGetDonations(request, env, logger);
     }
-   );
+    // Create donation endpoint
+    else if (path === "/api/donations" && method === "POST") {
+      response = await donationRoutes.handleCreateDonation(
+        request,
+        env,
+        logger
+      );
+    }
+    // Get disbursements endpoint (public)
+    else if (path === "/api/disbursements" && method === "GET") {
+      response = await disbursementRoutes.handleGetDisbursementsPublic(
+        request,
+        env,
+        logger
+      );
+    }
+    // Midtrans webhook endpoint
+    else if (path === "/api/midtrans/notification" && method === "POST") {
+      response = await donationRoutes.handleMidtransWebhook(
+        request,
+        env,
+        logger
+      );
+    }
+    // Admin login endpoint
+    else if (path === "/api/admin/login" && method === "POST") {
+      response = await adminRoutes.handleAdminLogin(request, env, logger);
+    }
+    // Get disbursements endpoint (admin)
+    else if (path === "/api/admin/disbursements" && method === "GET") {
+      response = await disbursementRoutes.handleGetDisbursements(
+        request,
+        env,
+        logger
+      );
+    }
+    // Create disbursement endpoint (admin)
+    else if (path === "/api/admin/disbursements" && method === "POST") {
+      response = await disbursementRoutes.handleCreateDisbursement(
+        request,
+        env,
+        logger
+      );
+    }
+    // Get or create disbursement activities endpoint (admin)
+    else {
+      const activitiesMatch = path.match(
+        /^\/api\/admin\/disbursements\/(\d+)\/activities$/
+      );
+      if (activitiesMatch) {
+        const disbursementId = parseInt(activitiesMatch[1]);
+        if (method === "GET") {
+          response =
+            await disbursementRoutes.handleGetDisbursementActivities(
+              disbursementId,
+              request,
+              env,
+              logger
+            );
+        } else if (method === "POST") {
+          response =
+            await disbursementRoutes.handleCreateDisbursementActivity(
+              disbursementId,
+              request,
+              env,
+              logger
+            );
+        } else {
+          response = Errors.NOT_FOUND("Endpoint");
+        }
+      }
+      // File upload endpoint (admin)
+      else if (path === "/api/admin/upload" && method === "POST") {
+        response = await adminRoutes.handleFileUpload(request, env, logger);
+      } else {
+        response = Errors.NOT_FOUND("Endpoint");
+      }
+    }
+
+    // Add request ID to response headers
+    if (response) {
+      const headers = new Headers(response.headers);
+      headers.set("X-Request-ID", requestId);
+      
+      // For JSON responses, add request_id to body
+      if (response.headers.get("Content-Type")?.includes("json")) {
+        try {
+          const clonedResponse = response.clone();
+          const body = await clonedResponse.json();
+          return new Response(
+            JSON.stringify({ ...body, request_id: requestId }),
+            {
+              status: response.status,
+              headers: headers,
+            }
+          );
+        } catch (e) {
+          // If JSON parsing fails, just add header
+          return new Response(response.body, {
+            status: response.status,
+            headers: headers,
+          });
+        }
+      }
+      
+      // For non-JSON responses, just add header
+      return new Response(response.body, {
+        status: response.status,
+        headers: headers,
+      });
+    }
+
+    return Errors.NOT_FOUND("Endpoint");
+  } catch (error) {
+    await logger.error("Unhandled API error", error, {
+      path,
+      method,
+      request_id: requestId,
+    });
+    return handleError(error, logger, requestId);
   }
-
-  // Generate unique filename
-  const timestamp = Date.now();
-  // Sanitize original filename and extract extension
-  const sanitizedOriginalName = sanitizeText(file.name, 255);
-  const fileExtension = sanitizedOriginalName.split(".").pop() || "bin";
-  // Validate extension is safe (alphanumeric only, max 10 chars)
-  const safeExtension = fileExtension.replace(/[^a-zA-Z0-9]/g, "").substring(0, 10) || "bin";
-  const fileName = `activity_${timestamp}_${Math.random()
-   .toString(36)
-   .substring(7)}.${safeExtension}`;
-
-  // Upload to R2
-  const r2Bucket = env.ACTIVITY_FILES;
-  if (!r2Bucket) {
-   return new Response(JSON.stringify({ error: "R2 bucket not configured" }), {
-    status: 500,
-    headers: {
-     "Content-Type": "application/json",
-     "Access-Control-Allow-Origin": "*",
-    },
-   });
-  }
-
-  const fileBuffer = await file.arrayBuffer();
-  await r2Bucket.put(fileName, fileBuffer, {
-   httpMetadata: {
-    contentType: file.type,
-    cacheControl: "public, max-age=31536000",
-   },
-   customMetadata: {
-    originalName: file.name,
-    uploadedAt: new Date().toISOString(),
-   },
-  });
-
-  // Generate public URL
-  // Option 1: If you have a custom domain for R2, use it
-  // Option 2: Use R2 public URL format (bucket must be public)
-  // For R2 public buckets, URL format is: https://<account-id>.r2.cloudflarestorage.com/<bucket-name>/<object-key>
-  // Or if using custom domain: https://<custom-domain>/<object-key>
-
-  const customDomain = env.R2_PUBLIC_DOMAIN || "files-donasi.gdgmedan.com";
-  const fileUrl = `https://${customDomain}/${fileName}`;
-
-  return new Response(
-   JSON.stringify({
-    success: true,
-    file_url: fileUrl,
-    file_key: fileName,
-    file_name: file.name,
-    file_size: file.size,
-    file_type: file.type,
-   }),
-   {
-    headers: {
-     "Content-Type": "application/json",
-     "Access-Control-Allow-Origin": "*",
-    },
-   }
-  );
- } catch (error) {
-  console.error("File upload error:", error);
-  return new Response(
-   JSON.stringify({
-    error: "File upload failed",
-    message: error.message,
-   }),
-   {
-    status: 500,
-    headers: {
-     "Content-Type": "application/json",
-     "Access-Control-Allow-Origin": "*",
-    },
-   }
-  );
- }
-}
-
-// Verify admin token
-async function verifyAdminToken(token, db) {
- const session = await db
-  .prepare(
-   'SELECT * FROM admin_sessions WHERE token = ? AND expires_at > datetime("now")'
-  )
-  .bind(token)
-  .first();
-
- return !!session;
 }
