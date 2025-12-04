@@ -6,6 +6,132 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// Toast Notification System
+function showToast(message, type = "info", description = "") {
+  const container = document.getElementById("toast-container");
+  if (!container) return;
+
+  const toast = document.createElement("div");
+  toast.className = `toast ${type}`;
+
+  const icons = {
+    success: "✓",
+    error: "✕",
+    info: "ℹ",
+  };
+
+  toast.innerHTML = `
+    <span class="toast-icon">${icons[type] || icons.info}</span>
+    <div class="toast-content">
+      <div class="toast-message">${escapeHtml(message)}</div>
+      ${description ? `<div class="toast-description">${escapeHtml(description)}</div>` : ""}
+    </div>
+    <button class="toast-close" onclick="this.parentElement.remove()">×</button>
+  `;
+
+  container.appendChild(toast);
+
+  // Auto remove after 5 seconds
+  setTimeout(() => {
+    toast.style.animation = "slideIn 0.3s ease-out reverse";
+    setTimeout(() => toast.remove(), 300);
+  }, 5000);
+}
+
+// Loading Skeleton Functions
+function createDonationSkeleton() {
+  return Array(5)
+    .fill(0)
+    .map(
+      () => `
+    <div class="skeleton-item">
+      <div class="skeleton skeleton-line short" style="height: 20px; margin-bottom: 8px;"></div>
+      <div class="skeleton skeleton-line medium" style="height: 16px; margin-bottom: 8px;"></div>
+      <div class="skeleton skeleton-line short" style="height: 14px;"></div>
+    </div>
+  `
+    )
+    .join("");
+}
+
+function createDisbursementSkeleton() {
+  return Array(3)
+    .fill(0)
+    .map(
+      () => `
+    <div class="skeleton-item">
+      <div class="skeleton skeleton-line long" style="height: 18px; margin-bottom: 10px;"></div>
+      <div class="skeleton skeleton-line short" style="height: 14px;"></div>
+    </div>
+  `
+    )
+    .join("");
+}
+
+// Back to Top Functionality
+function initBackToTop() {
+  const backToTopBtn = document.getElementById("back-to-top");
+  if (!backToTopBtn) return;
+
+  window.addEventListener("scroll", () => {
+    if (window.pageYOffset > 300) {
+      backToTopBtn.classList.add("visible");
+    } else {
+      backToTopBtn.classList.remove("visible");
+    }
+  });
+}
+
+function scrollToTop() {
+  window.scrollTo({
+    top: 0,
+    behavior: "smooth",
+  });
+}
+
+// Social Sharing Functions
+function shareWhatsApp() {
+  const text = encodeURIComponent(
+    "Bantu korban bencana banjir dan tanah longsor di Aceh, Sumatera Utara, dan Sumatera Barat bersama Komunitas Google Developer Group Indonesia. Setiap donasi Anda akan sangat berarti bagi mereka yang membutuhkan."
+  );
+  const url = encodeURIComponent(window.location.href);
+  window.open(`https://wa.me/?text=${text}%20${url}`, "_blank");
+}
+
+function shareFacebook() {
+  const url = encodeURIComponent(window.location.href);
+  const text = encodeURIComponent(
+    "Bantu korban bencana banjir dan tanah longsor di Aceh, Sumatera Utara, dan Sumatera Barat bersama Komunitas Google Developer Group Indonesia. Setiap donasi Anda akan sangat berarti bagi mereka yang membutuhkan."
+  );
+  window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}&quote=${text}`, "_blank");
+}
+
+function shareTwitter() {
+  const text = encodeURIComponent(
+    "Bantu korban bencana banjir dan tanah longsor di Aceh, Sumatera Utara, dan Sumatera Barat bersama Komunitas Google Developer Group Indonesia. Setiap donasi Anda akan sangat berarti bagi mereka yang membutuhkan."
+  );
+  const url = encodeURIComponent(window.location.href);
+  window.open(`https://twitter.com/intent/tweet?text=${text}&url=${url}`, "_blank");
+}
+
+function shareTelegram() {
+  const text = encodeURIComponent(
+    "Bantu korban bencana banjir dan tanah longsor di Aceh, Sumatera Utara, dan Sumatera Barat bersama Komunitas Google Developer Group Indonesia. Setiap donasi Anda akan sangat berarti bagi mereka yang membutuhkan."
+  );
+  const url = encodeURIComponent(window.location.href);
+  window.open(`https://t.me/share/url?url=${url}&text=${text}`, "_blank");
+}
+function copyLink() {
+  navigator.clipboard
+    .writeText(window.location.href)
+    .then(() => {
+      showToast("Link berhasil disalin!", "success");
+    })
+    .catch(() => {
+      showToast("Gagal menyalin link", "error");
+    });
+}
+
 // Format currency
 function formatCurrency(amount) {
  return new Intl.NumberFormat("id-ID", {
@@ -55,16 +181,35 @@ async function loadStats() {
   if (!response.ok) throw new Error("Failed to load stats");
 
   const data = await response.json();
+  const totalRaised = data.total_raised || 0;
+  const totalDisbursed = data.total_disbursed || 0;
+  const donorCount = data.donor_count || 0;
+  const goal = 100000000; // 100 million IDR
 
-  document.getElementById("total-raised").textContent = formatCurrency(
-   data.total_raised || 0
-  );
-  document.getElementById("total-disbursed").textContent = formatCurrency(
-   data.total_disbursed || 0
-  );
-  document.getElementById("donor-count").textContent = data.donor_count || 0;
+  // Update summary cards
+  document.getElementById("total-raised").textContent = formatCurrency(totalRaised);
+  document.getElementById("total-disbursed").textContent = formatCurrency(totalDisbursed);
+  document.getElementById("donor-count").textContent = donorCount;
+
+  // Update progress bar
+  const progressPercentage = Math.min((totalRaised / goal) * 100, 100);
+  const progressBar = document.getElementById("progress-bar");
+  const progressRaised = document.getElementById("progress-raised");
+  const progressRemaining = document.getElementById("progress-remaining");
+
+  if (progressBar) {
+    progressBar.style.width = `${progressPercentage}%`;
+  }
+  if (progressRaised) {
+    progressRaised.textContent = formatCurrency(totalRaised);
+  }
+  if (progressRemaining) {
+    const remaining = Math.max(goal - totalRaised, 0);
+    progressRemaining.textContent = `${formatCurrency(remaining)} tersisa`;
+  }
  } catch (error) {
   console.error("Error loading stats:", error);
+  showToast("Gagal memuat statistik", "error");
  }
 }
 
@@ -77,6 +222,9 @@ const itemsPerPage = 10;
 async function loadRecentDonations(page = 1) {
  const listElement = document.getElementById("donations-list");
  currentPage = page;
+
+ // Show loading skeleton
+ listElement.innerHTML = createDonationSkeleton();
 
  try {
   const response = await fetch(
@@ -121,6 +269,7 @@ async function loadRecentDonations(page = 1) {
   console.error("Error loading donations:", error);
   listElement.innerHTML = '<p class="empty">Gagal memuat data donasi.</p>';
   updatePaginationControls({});
+  showToast("Gagal memuat donasi", "error");
  }
 }
 
@@ -128,6 +277,9 @@ async function loadRecentDonations(page = 1) {
 async function loadDisbursements(page = 1) {
  const listElement = document.getElementById("disbursements-list");
  currentDisbursementsPage = page;
+
+ // Show loading skeleton
+ listElement.innerHTML = createDisbursementSkeleton();
 
  try {
   const response = await fetch(
@@ -250,6 +402,7 @@ async function loadDisbursements(page = 1) {
   listElement.innerHTML =
    '<p class="empty">Gagal memuat data penyaluran donasi.</p>';
   updateDisbursementsPaginationControls({});
+  showToast("Gagal memuat penyaluran donasi", "error");
  }
 }
 
@@ -520,12 +673,15 @@ async function handleDonationSubmit(e) {
 
   // Redirect to Midtrans payment page
   if (result.payment_url) {
-   window.location.href = result.payment_url;
+   showToast("Mengalihkan ke halaman pembayaran...", "info");
+   setTimeout(() => {
+    window.location.href = result.payment_url;
+   }, 1000);
   } else {
    throw new Error("Payment URL not received");
   }
  } catch (error) {
-  alert("Terjadi kesalahan: " + error.message);
+  showToast("Terjadi kesalahan", "error", error.message);
   submitBtn.disabled = false;
   submitBtn.textContent = originalText;
  }
@@ -556,6 +712,7 @@ document.addEventListener("DOMContentLoaded", () => {
  loadStats();
  loadRecentDonations();
  loadDisbursements();
+ initBackToTop();
 
  // Initialize hero slideshow
  initHeroSlideshow();
