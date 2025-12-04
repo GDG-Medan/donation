@@ -1325,6 +1325,59 @@ body {
  margin-bottom: 10px;
 }
 
+.gdg-list {
+ display: grid;
+ grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+ gap: 8px;
+ margin-top: 15px;
+ margin-bottom: 20px;
+}
+
+.gdg-list li {
+ padding: 10px 15px;
+ background: var(--bg-color);
+ border-radius: 6px;
+ border-left: 3px solid var(--primary-color);
+ transition: all 0.2s ease;
+ display: flex;
+ align-items: center;
+ justify-content: space-between;
+ gap: 12px;
+}
+
+.gdg-list li:hover {
+ background: #f0f4ff;
+ transform: translateX(5px);
+}
+
+.gdg-list li span {
+ flex: 1;
+}
+
+.gdg-instagram-link {
+ display: flex;
+ align-items: center;
+ justify-content: center;
+ width: 32px;
+ height: 32px;
+ border-radius: 6px;
+ background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+ color: white;
+ text-decoration: none;
+ transition: all 0.2s ease;
+ flex-shrink: 0;
+}
+
+.gdg-instagram-link:hover {
+ transform: scale(1.1);
+ box-shadow: 0 2px 8px rgba(188, 24, 136, 0.4);
+}
+
+.instagram-icon {
+ width: 18px;
+ height: 18px;
+}
+
 .content-card strong {
  color: var(--text-color);
  font-weight: 600;
