@@ -146,7 +146,7 @@ These variables enhance functionality but are not required:
 |----------|-------------|---------|---------|
 | `MIDTRANS_CLIENT_KEY` | Midtrans client key (for frontend if needed) | - | `Mid-client-xxxxx` |
 | `GRAFANA_OTLP_ENDPOINT` | Grafana.net OTLP endpoint URL for logging | - | `https://otlp-gateway-prod-ap-southeast-2.grafana.net/otlp/v1/logs` |
-| `GRAFANA_OTLP_AUTH` | Grafana.net OTLP authentication token (Base64 encoded) | - | `MTQ1ODgzNTpnbGNfZXlKdklqb2lNVFl3T0RBeU1DSXNJbTRpT2lKblpHZHRaV1JoYmlJc0ltc2lPaUowT1VzM1kxSkNObm8xTnpSUVNYVlVZak5YTlRSRk1WY2lMQ0p0SWpwN0luSWlPaUp3Y205a0xXRndMWE52ZFhSb1pXRnpkQzB5SW4xOQ==` |
+| `GRAFANA_OTLP_AUTH` | Grafana.net OTLP authentication token (Base64 encoded) | - | `your-base64-encoded-auth-token` |
 | `SERVICE_NAME` | Service name for logging and monitoring | `gdg-donation-api` | `gdg-donation-api` |
 | `SERVICE_VERSION` | Service version for logging | `1.0.0` | `1.0.0` |
 | `ENVIRONMENT` | Environment name (development, staging, production) | `production` | `production` |
