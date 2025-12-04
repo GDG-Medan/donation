@@ -563,8 +563,8 @@ async function loadDisbursements(page = 1) {
                                    <img src="${escapeHtml(file.file_url)}" alt="${escapeHtml(file.file_name || "Image")}" loading="lazy" />
                                  </div>`
                               : isVideo
-                              ? `<div class="activity-gallery-video">
-                                   <video src="${escapeHtml(file.file_url)}" controls preload="metadata"></video>
+                              ? `<div class="activity-gallery-link" onclick="openVideoModal('${escapeHtml(file.file_url)}', '${escapeHtml(file.file_name || "Video")}')" style="cursor: pointer;">
+                                   <video src="${escapeHtml(file.file_url)}" preload="metadata" muted></video>
                                  </div>`
                               : `<a href="${escapeHtml(file.file_url)}" target="_blank" rel="noopener noreferrer" class="activity-gallery-link activity-gallery-document">
                                    <div class="activity-gallery-document-icon">📄</div>
@@ -1084,5 +1084,47 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (event.key === "Escape" && imageModal.style.display === "block") {
    imageModal.style.display = "none";
   }
+  if (event.key === "Escape" && videoModal && videoModal.style.display === "block") {
+   closeVideoModal();
+  }
  });
+
+ // Video Modal functionality
+ const videoModal = document.getElementById("video-modal");
+ const modalVideo = document.getElementById("video-modal-video");
+ const videoModalCaption = document.getElementById("video-modal-caption");
+ const videoModalClose = document.getElementById("video-modal-close");
+
+ // Open video modal
+ window.openVideoModal = function (videoUrl, caption) {
+  if (!videoModal || !modalVideo) return;
+  videoModal.style.display = "block";
+  modalVideo.src = videoUrl;
+  videoModalCaption.textContent = caption || "";
+  modalVideo.play();
+ };
+
+ // Close video modal
+ function closeVideoModal() {
+  if (!videoModal || !modalVideo) return;
+  videoModal.style.display = "none";
+  modalVideo.pause();
+  modalVideo.src = "";
+ }
+
+ // Close modal when clicking the X
+ if (videoModalClose) {
+  videoModalClose.onclick = function () {
+   closeVideoModal();
+  };
+ }
+
+ // Close modal when clicking outside the video
+ if (videoModal) {
+  videoModal.onclick = function (event) {
+   if (event.target === videoModal) {
+    closeVideoModal();
+   }
+  };
+ }
 });

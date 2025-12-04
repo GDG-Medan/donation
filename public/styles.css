@@ -427,11 +427,16 @@ body {
  width: 100%;
 }
 
-.activity-gallery-video video {
+.activity-gallery-link video {
  width: 100%;
  height: 150px;
  object-fit: cover;
  display: block;
+ cursor: pointer;
+}
+
+.activity-gallery-link:hover video {
+ opacity: 0.9;
 }
 
 .activity-gallery-document {
@@ -1502,6 +1507,12 @@ body {
  margin-top: 5vh;
  object-fit: contain;
  animation: zoomIn 0.3s ease;
+}
+
+#video-modal-video {
+ max-width: 90%;
+ max-height: 90vh;
+ margin-top: 5vh;
 }
 
 @keyframes zoomIn {
