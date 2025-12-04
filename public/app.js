@@ -6,6 +6,91 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// Email validation function (matches backend validation)
+function isValidEmail(email) {
+  if (!email || typeof email !== "string") {
+    return false;
+  }
+
+  // RFC 5322 compliant email regex (simplified but effective)
+  const emailRegex =
+    /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+
+  // Check length (max 254 characters per RFC 5321)
+  if (email.length > 254) {
+    return false;
+  }
+
+  return emailRegex.test(email);
+}
+
+// Phone validation function (matches backend validation)
+function isValidPhone(phone) {
+  if (!phone || typeof phone !== "string") {
+    return false;
+  }
+
+  // Remove spaces, dashes, and plus signs for validation
+  const cleaned = phone.replace(/[\s\-+]/g, "");
+
+  // Indonesian phone number patterns
+  const phoneRegex = /^(62|0)[0-9]{9,12}$/;
+
+  if (!phoneRegex.test(cleaned)) {
+    return false;
+  }
+
+  // Additional check: if starts with 62, should be followed by 8 (mobile)
+  if (cleaned.startsWith("62") && cleaned.length >= 3) {
+    if (cleaned[2] !== "8") {
+      return false;
+    }
+  }
+
+  // If starts with 0, should be followed by 8 (mobile)
+  if (cleaned.startsWith("0") && cleaned.length >= 2) {
+    if (cleaned[1] !== "8") {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// Show field error
+function showFieldError(input, message) {
+  const formGroup = input.closest(".form-group");
+  if (!formGroup) return;
+
+  // Remove existing error
+  const existingError = formGroup.querySelector(".field-error");
+  if (existingError) {
+    existingError.remove();
+  }
+
+  // Remove error class
+  input.classList.remove("error");
+
+  // Add error class and message
+  input.classList.add("error");
+  const errorDiv = document.createElement("div");
+  errorDiv.className = "field-error";
+  errorDiv.textContent = message;
+  formGroup.appendChild(errorDiv);
+}
+
+// Clear field error
+function clearFieldError(input) {
+  const formGroup = input.closest(".form-group");
+  if (!formGroup) return;
+
+  input.classList.remove("error");
+  const existingError = formGroup.querySelector(".field-error");
+  if (existingError) {
+    existingError.remove();
+  }
+}
+
 // Toast Notification System
 function showToast(message, type = "info", description = "") {
   const container = document.getElementById("toast-container");
@@ -634,6 +719,53 @@ function updateFeeBreakdown(donationAmount) {
 async function handleDonationSubmit(e) {
  e.preventDefault();
 
+ // Clear all previous errors
+ const form = e.target;
+ const allInputs = form.querySelectorAll("input, textarea");
+ allInputs.forEach((input) => clearFieldError(input));
+
+ // Validate email
+ const emailInput = document.getElementById("email");
+ const email = emailInput.value.trim();
+
+ if (!email) {
+  showFieldError(emailInput, "Email wajib diisi");
+  emailInput.focus();
+  return;
+ }
+
+ if (!isValidEmail(email)) {
+  showFieldError(emailInput, "Format email tidak valid. Contoh: nama@email.com");
+  emailInput.focus();
+  return;
+ }
+
+ // Validate name
+ const nameInput = document.getElementById("name");
+ const name = nameInput.value.trim();
+
+ if (!name) {
+  showFieldError(nameInput, "Nama wajib diisi");
+  nameInput.focus();
+  return;
+ }
+
+ // Validate amount
+ const amountInput = document.getElementById("amount");
+ const donationAmount = parseInt(amountInput.value);
+
+ if (!donationAmount || donationAmount < 10000) {
+  showFieldError(amountInput, "Jumlah donasi minimum Rp 10.000");
+  amountInput.focus();
+  return;
+ }
+
+ if (donationAmount > 1000000000) {
+  showFieldError(amountInput, "Jumlah donasi maksimum Rp 1.000.000.000");
+  amountInput.focus();
+  return;
+ }
+
  const submitBtn = document.getElementById("submit-btn");
  const originalText = submitBtn.textContent;
  submitBtn.disabled = true;
@@ -641,18 +773,30 @@ async function handleDonationSubmit(e) {
 
  try {
   const formData = new FormData(e.target);
-  const donationAmount = parseInt(formData.get("amount"));
   const fee = calculateFee(donationAmount);
   const totalAmount = donationAmount + fee;
 
+  // Validate phone if provided
+  const phone = formData.get("phone")?.trim() || null;
+  if (phone && !isValidPhone(phone)) {
+   showFieldError(
+    phoneInput,
+    "Format nomor telepon tidak valid. Contoh: 081234567890 atau +6281234567890"
+   );
+   phoneInput.focus();
+   submitBtn.disabled = false;
+   submitBtn.textContent = originalText;
+   return;
+  }
+
   const data = {
-   name: formData.get("name"),
-   email: formData.get("email"),
-   phone: formData.get("phone") || null,
+   name: name,
+   email: email.toLowerCase(), // Normalize email
+   phone: phone,
    amount: donationAmount,
    fee: fee,
    total_amount: totalAmount,
-   message: formData.get("message") || null,
+   message: formData.get("message")?.trim() || null,
    anonymous: formData.get("anonymous") === "on",
   };
 
@@ -727,6 +871,49 @@ document.addEventListener("DOMContentLoaded", () => {
  document
   .getElementById("donation-form")
   .addEventListener("submit", handleDonationSubmit);
+
+ // Real-time email validation
+ const emailInput = document.getElementById("email");
+ if (emailInput) {
+  emailInput.addEventListener("blur", function () {
+   const email = this.value.trim();
+   if (email && !isValidEmail(email)) {
+    showFieldError(this, "Format email tidak valid. Contoh: nama@email.com");
+   } else if (email) {
+    clearFieldError(this);
+   }
+  });
+
+  emailInput.addEventListener("input", function () {
+   const email = this.value.trim();
+   if (email && isValidEmail(email)) {
+    clearFieldError(this);
+   }
+  });
+ }
+
+ // Real-time phone validation (if provided)
+ const phoneInput = document.getElementById("phone");
+ if (phoneInput) {
+  phoneInput.addEventListener("blur", function () {
+   const phone = this.value.trim();
+   if (phone && !isValidPhone(phone)) {
+    showFieldError(
+     this,
+     "Format nomor telepon tidak valid. Contoh: 081234567890 atau +6281234567890"
+    );
+   } else if (phone) {
+    clearFieldError(this);
+   }
+  });
+
+  phoneInput.addEventListener("input", function () {
+   const phone = this.value.trim();
+   if (phone && isValidPhone(phone)) {
+    clearFieldError(this);
+   }
+  });
+ }
 
  // Update fee breakdown when amount changes
  const amountInput = document.getElementById("amount");
