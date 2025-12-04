@@ -1,3 +1,11 @@
+// Escape HTML to prevent XSS (defense in depth)
+function escapeHtml(text) {
+  if (!text) return "";
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 // Format currency
 function formatCurrency(amount) {
  return new Intl.NumberFormat("id-ID", {
@@ -93,11 +101,11 @@ async function loadRecentDonations(page = 1) {
       <div class="donation-item">
         <div class="donation-info">
           <div class="donation-name">
-            ${donation.anonymous ? "Donatur Anonim" : donation.name}
+            ${donation.anonymous ? "Donatur Anonim" : escapeHtml(donation.name)}
           </div>
           ${
            donation.message
-            ? `<div class="donation-message">"${donation.message}"</div>`
+            ? `<div class="donation-message">"${escapeHtml(donation.message)}"</div>`
             : ""
           }
           <div class="donation-date">${formatDate(donation.created_at)}</div>
@@ -148,7 +156,7 @@ async function loadDisbursements(page = 1) {
         <div class="disbursement-header">
           <div class="disbursement-info">
             <div class="disbursement-description">
-              ${disbursement.description}
+              ${escapeHtml(disbursement.description)}
             </div>
             <div class="disbursement-date">${formatDate(
              disbursement.created_at
@@ -188,7 +196,7 @@ async function loadDisbursements(page = 1) {
                   <div class="activity-time">${formatDate(
                    activity.activity_time
                   )}</div>
-                  <div class="activity-description">${activity.description}</div>
+                  <div class="activity-description">${escapeHtml(activity.description)}</div>
                   ${
                    (activity.files && activity.files.length > 0)
                     ? `
@@ -202,16 +210,16 @@ async function loadDisbursements(page = 1) {
                           <div class="activity-gallery-item">
                             ${
                              isImage
-                              ? `<div class="activity-gallery-link" onclick="openImageModal('${file.file_url}', '${(file.file_name || "Image").replace(/'/g, "&#39;")}')" style="cursor: pointer;">
-                                   <img src="${file.file_url}" alt="${file.file_name || "Image"}" loading="lazy" />
+                              ? `<div class="activity-gallery-link" onclick="openImageModal('${escapeHtml(file.file_url)}', '${escapeHtml(file.file_name || "Image")}')" style="cursor: pointer;">
+                                   <img src="${escapeHtml(file.file_url)}" alt="${escapeHtml(file.file_name || "Image")}" loading="lazy" />
                                  </div>`
                               : isVideo
                               ? `<div class="activity-gallery-video">
-                                   <video src="${file.file_url}" controls preload="metadata"></video>
+                                   <video src="${escapeHtml(file.file_url)}" controls preload="metadata"></video>
                                  </div>`
-                              : `<a href="${file.file_url}" target="_blank" rel="noopener noreferrer" class="activity-gallery-link activity-gallery-document">
+                              : `<a href="${escapeHtml(file.file_url)}" target="_blank" rel="noopener noreferrer" class="activity-gallery-link activity-gallery-document">
                                    <div class="activity-gallery-document-icon">📄</div>
-                                   <div class="activity-gallery-document-name">${file.file_name || "File"}</div>
+                                   <div class="activity-gallery-document-name">${escapeHtml(file.file_name || "File")}</div>
                                  </a>`
                             }
                           </div>
@@ -552,11 +560,10 @@ document.addEventListener("DOMContentLoaded", () => {
  // Initialize hero slideshow
  initHeroSlideshow();
 
- // Refresh stats, donations, and disbursements every 30 seconds
+ // Refresh stats and donations every 30 seconds
  setInterval(() => {
   loadStats();
   loadRecentDonations(currentPage);
-  loadDisbursements(currentDisbursementsPage);
  }, 30000);
 
  // Handle form submission

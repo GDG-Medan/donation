@@ -1,3 +1,11 @@
+import {
+ isValidEmail,
+ isValidPhone,
+ sanitizeHtml,
+ sanitizeText,
+ isValidDonationAmount,
+} from "./validation.js";
+
 export async function onRequest(context) {
  const { request, env } = context;
  const url = new URL(request.url);
@@ -211,11 +219,11 @@ async function handleCreateDonation(request, env) {
  const data = await request.json();
 
  // Validate required fields
- if (!data.name || !data.email || !data.amount || data.amount < 10000) {
+ if (!data.name || !data.email || !data.amount) {
   return new Response(
    JSON.stringify({
     error: "Invalid donation data",
-    message: "Name, email, and amount (min Rp 10,000) are required",
+    message: "Name, email, and amount are required",
    }),
    {
     status: 400,
@@ -227,8 +235,65 @@ async function handleCreateDonation(request, env) {
   );
  }
 
+ // Validate email format
+ if (!isValidEmail(data.email)) {
+  return new Response(
+   JSON.stringify({
+    error: "Invalid email format",
+    message: "Please provide a valid email address",
+   }),
+   {
+    status: 400,
+    headers: {
+     "Content-Type": "application/json",
+     "Access-Control-Allow-Origin": "*",
+    },
+   }
+  );
+ }
+
+ // Validate phone number if provided
+ if (data.phone && !isValidPhone(data.phone)) {
+  return new Response(
+   JSON.stringify({
+    error: "Invalid phone number format",
+    message: "Please provide a valid Indonesian phone number",
+   }),
+   {
+    status: 400,
+    headers: {
+     "Content-Type": "application/json",
+     "Access-Control-Allow-Origin": "*",
+    },
+   }
+  );
+ }
+
+ // Validate donation amount
+ if (!isValidDonationAmount(data.amount)) {
+  return new Response(
+   JSON.stringify({
+    error: "Invalid donation amount",
+    message: "Amount must be between Rp 10,000 and Rp 1,000,000,000",
+   }),
+   {
+    status: 400,
+    headers: {
+     "Content-Type": "application/json",
+     "Access-Control-Allow-Origin": "*",
+    },
+   }
+  );
+ }
+
+ // Sanitize inputs
+ const sanitizedName = sanitizeText(data.name, 255);
+ const sanitizedEmail = data.email.trim().toLowerCase(); // Email is already validated, just normalize
+ const sanitizedPhone = data.phone ? sanitizeText(data.phone, 20) : null;
+ const sanitizedMessage = data.message ? sanitizeHtml(data.message) : null;
+
  // Calculate fee (0.7%) and total amount
- const donationAmount = data.amount;
+ const donationAmount = parseInt(data.amount);
  const fee = Math.ceil(donationAmount * 0.007);
  const totalAmount = donationAmount + fee;
 
@@ -239,11 +304,11 @@ async function handleCreateDonation(request, env) {
       VALUES (?, ?, ?, ?, ?, ?, ?)`
   )
   .bind(
-   data.name,
-   data.email,
-   data.phone || null,
+   sanitizedName,
+   sanitizedEmail,
+   sanitizedPhone,
    donationAmount, // Store original donation amount
-   data.message || null,
+   sanitizedMessage,
    data.anonymous ? 1 : 0,
    "pending"
   )
@@ -614,9 +679,12 @@ async function handleCreateDisbursement(request, env) {
   });
  }
 
+ // Sanitize description to prevent XSS
+ const sanitizedDescription = sanitizeHtml(description);
+
  await db
   .prepare("INSERT INTO disbursements (amount, description) VALUES (?, ?)")
-  .bind(amount, description)
+  .bind(amount, sanitizedDescription)
   .run();
 
  return new Response(JSON.stringify({ success: true }), {
@@ -745,12 +813,15 @@ async function handleCreateDisbursementActivity(disbursementId, request, env) {
   );
  }
 
+ // Sanitize description to prevent XSS
+ const sanitizedDescription = sanitizeHtml(description);
+
  // Create activity (without file_url and file_name for backward compatibility)
  const result = await db
   .prepare(
    "INSERT INTO disbursement_activities (disbursement_id, activity_time, description) VALUES (?, ?, ?)"
   )
-  .bind(disbursementId, activity_time, description)
+  .bind(disbursementId, activity_time, sanitizedDescription)
   .run();
 
  const activityId = result.meta.last_row_id;
@@ -759,15 +830,20 @@ async function handleCreateDisbursementActivity(disbursementId, request, env) {
  if (files && Array.isArray(files) && files.length > 0) {
   for (const file of files) {
    if (file.file_url && file.file_name) {
+    // Sanitize file name and validate URL format
+    const sanitizedFileName = sanitizeText(file.file_name, 255);
+    const sanitizedFileUrl = sanitizeText(file.file_url, 500);
+    const sanitizedFileType = file.file_type ? sanitizeText(file.file_type, 50) : null;
+
     await db
      .prepare(
       "INSERT INTO activity_files (activity_id, file_url, file_name, file_type) VALUES (?, ?, ?, ?)"
      )
      .bind(
       activityId,
-      file.file_url,
-      file.file_name,
-      file.file_type || null
+      sanitizedFileUrl,
+      sanitizedFileName,
+      sanitizedFileType
      )
      .run();
    }
@@ -855,11 +931,14 @@ async function handleFileUpload(request, env) {
 
   // Generate unique filename
   const timestamp = Date.now();
-  const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-  const fileExtension = sanitizedName.split(".").pop();
+  // Sanitize original filename and extract extension
+  const sanitizedOriginalName = sanitizeText(file.name, 255);
+  const fileExtension = sanitizedOriginalName.split(".").pop() || "bin";
+  // Validate extension is safe (alphanumeric only, max 10 chars)
+  const safeExtension = fileExtension.replace(/[^a-zA-Z0-9]/g, "").substring(0, 10) || "bin";
   const fileName = `activity_${timestamp}_${Math.random()
    .toString(36)
-   .substring(7)}.${fileExtension}`;
+   .substring(7)}.${safeExtension}`;
 
   // Upload to R2
   const r2Bucket = env.ACTIVITY_FILES;
