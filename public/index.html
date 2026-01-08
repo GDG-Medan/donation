@@ -236,7 +236,11 @@
    <!-- Donation Form -->
    <section class="donation-form-section">
     <h2>Form Donasi</h2>
-    <form id="donation-form" class="donation-form">
+    <div class="donation-closed-notice" id="donation-closed-notice" style="display: block; padding: 20px; background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; margin-bottom: 20px; text-align: center;">
+     <h3 style="margin: 0 0 10px 0; color: #856404;">Donasi Ditutup</h3>
+     <p style="margin: 0; color: #856404;">Donasi saat ini ditutup. Terima kasih atas dukungan Anda.</p>
+    </div>
+    <form id="donation-form" class="donation-form" style="opacity: 0.5; pointer-events: none;">
      <div class="form-group">
       <label for="name">Nama *</label>
       <input type="text" id="name" name="name" required />

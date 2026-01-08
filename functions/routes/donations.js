@@ -260,6 +260,11 @@ export async function handleCreateDonation(request, env, logger) {
   const db = env.DB;
 
   try {
+    // Donations are closed
+    return Errors.VALIDATION_ERROR(
+      "Donasi saat ini ditutup. Terima kasih atas dukungan Anda."
+    );
+
     const data = await request.json();
 
     // Validate required fields

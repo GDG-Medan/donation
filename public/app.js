@@ -912,6 +912,10 @@ function updateFeeBreakdown(donationAmount) {
 async function handleDonationSubmit(e) {
  e.preventDefault();
 
+ // Donations are closed
+ showToast("Donasi saat ini ditutup. Terima kasih atas dukungan Anda.", "info");
+ return;
+
  // Clear all previous errors
  const form = e.target;
  const allInputs = form.querySelectorAll("input, textarea");
